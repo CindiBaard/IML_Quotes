@@ -42,8 +42,9 @@ def append_to_google_sheets(data: dict):
         )
         client = gspread.authorize(creds)
         
-        sheet_url = st.secrets["sheets"]["spreadsheet_url"]
-        sheet = client.open_by_url(sheet_url).sheet1
+        # Open using the Google Sheet ID directly
+        SHEET_ID = "1b4Io3QvIJNgI29H1mLSdugKV1nOockWHx-dFuh8YUyE"
+        sheet = client.open_by_key(SHEET_ID).sheet1
 
         # Check if the worksheet is empty and add headers
         headers = [
@@ -54,7 +55,6 @@ def append_to_google_sheets(data: dict):
             "Layflat Supplied", "Trials Required", "Trial Variants", "Trial Qty Per Variant"
         ]
         
-        # If row 1 is empty, insert headers
         if not sheet.row_values(1):
             sheet.append_row(headers)
 
