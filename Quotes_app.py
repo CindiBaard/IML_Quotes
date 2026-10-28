@@ -167,12 +167,11 @@ def generate_pdf_quote(data: dict) -> bytes:
     if data["Target Jars"]:
         for jar in data["Target Jars"]:
             pdf.set_font("Helvetica", "", 9)
-            pdf.cell(0, 5, f"  • {jar}", border=False, new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 5, f"  - {jar}", border=False, new_x="LMARGIN", new_y="NEXT")
     else:
         pdf.set_font("Helvetica", "I", 9)
         pdf.cell(0, 5, "No specific jar configurations selected.", border=False, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
-
     # 4. Print & Colour
     section_heading("4. Print & Colour Specifications")
     key_value("Colour Matching Methods:", ", ".join(data["Colour Matching"]) if data["Colour Matching"] else "None specified")
