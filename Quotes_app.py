@@ -14,8 +14,9 @@ try:
     import gspread
     from google.oauth2.service_account import Credentials
     HAS_GSPREAD = True
-except ImportError:
+except Exception as e:
     HAS_GSPREAD = False
+    st.error(f"Import Error details: {e}")
 
 # Optional import for PDF generation:
 # pip install fpdf2
