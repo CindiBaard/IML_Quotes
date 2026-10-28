@@ -26,31 +26,37 @@ except ImportError:
 # -----------------------------------------------------------------------------
 
 def append_to_google_sheets(data: dict):
-    """
-    Appends submission data to a Google Sheet using gspread and Streamlit secrets.
-    Expects st.secrets["gcp_service_account"] and st.secrets["sheets"]["spreadsheet_url"].
-    """
     if not HAS_GSPREAD:
         st.warning("gspread library is not installed. Skipping Google Sheets integration.")
         return False
 
     try:
-        # Define scopes
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
         
-        # Load credentials from Streamlit Secrets
         creds = Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
             scopes=scopes
         )
         client = gspread.authorize(creds)
         
-        # Open sheet
         sheet_url = st.secrets["sheets"]["spreadsheet_url"]
         sheet = client.open_by_url(sheet_url).sheet1
+
+        # Check if the worksheet is empty and add headers
+        headers = [
+            "Timestamp", "Total Quantity", "No of Variants", "Variant Details",
+            "Substrate Colour", "Substrate Type", "Material Specs", "Target Jars",
+            "Colour Matching", "Pantone Qty", "Pantone Refs", "Target Qty",
+            "Target Refs", "Litho Print", "Digital Print", "Epson Proof Qty",
+            "Layflat Supplied", "Trials Required", "Trial Variants", "Trial Qty Per Variant"
+        ]
+        
+        # If row 1 is empty, insert headers
+        if not sheet.row_values(1):
+            sheet.append_row(headers)
 
         # Format row data
         row = [
