@@ -1,8 +1,3 @@
-import sys
-import streamlit as st
-
-st.write("Python executable being used by Streamlit:", sys.executable)
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime
