@@ -1,14 +1,9 @@
 import sys
 import streamlit as st
-
-st.write("Python executable being used by Streamlit:", sys.executable)
-
 import pandas as pd
 from datetime import datetime
-import io
 
 # Optional imports for Google Sheets integration:
-# pip install gspread google-auth
 try:
     import gspread
     from google.oauth2.service_account import Credentials
@@ -17,7 +12,6 @@ except ImportError:
     HAS_GSPREAD = False
 
 # Optional import for PDF generation:
-# pip install fpdf2
 try:
     from fpdf import FPDF
     HAS_FPDF = True
@@ -46,11 +40,9 @@ def append_to_google_sheets(data: dict):
         )
         client = gspread.authorize(creds)
         
-        # Open using the Google Sheet ID directly
         SHEET_ID = "1b4Io3QvIJNgI29H1mLSdugKV1nOockWHx-dFuh8YUyE"
         sheet = client.open_by_key(SHEET_ID).sheet1
 
-        # Check if row 1 is empty and add headers only if missing
         headers = [
             "Timestamp", "Total Quantity", "No of Variants", "Variant Details",
             "Substrate Colour", "Substrate Type", "Material Specs", "Target Jars",
@@ -64,7 +56,6 @@ def append_to_google_sheets(data: dict):
         if not existing_row1:
             sheet.append_row(headers)
 
-        # Single row representation of the form data
         row = [
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             data["Total Quantity"],
@@ -91,7 +82,6 @@ def append_to_google_sheets(data: dict):
             data["Gross Total"]
         ]
 
-        # Single append call to ensure only 1 new row is added
         sheet.append_row(row)
         return True
     except Exception as e:
@@ -238,7 +228,33 @@ def generate_pdf_quote(data: dict) -> bytes:
     pdf.cell(145, 7, "Gross Total:", border=0, align="R")
     pdf.cell(35, 7, f"R {data['Gross Total']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
-    return pdf.output()
+    # Expressly cast bytearray output to standard bytes for Streamlit download_button
+    return bytes(pdf.output())
+
+
+# -----------------------------------------------------------------------------
+# FORM RESET CALLBACK FUNCTION
+# -----------------------------------------------------------------------------
+
+def reset_all_form_fields():
+    """Callback function triggered by the Refresh button to purge session state."""
+    known_keys = [
+        "total_qty", "num_variants", "substrate_colour", "substrate_type", 
+        "material_specs", "selected_jars", "colour_match_type", "qty_pantone_match", 
+        "pantone_refs", "qty_target_match", "target_refs", "litho_print", 
+        "digital_print", "epson_proof_qty", "layflat_supplied", "trials_required", 
+        "trial_variants", "trial_qty_per_variant", "cm_net", "cm_qty", 
+        "lf_net", "lf_qty", "pt_net", "pt_qty"
+    ]
+    
+    # Catch dynamic variant input keys
+    for key in list(st.session_state.keys()):
+        if key.startswith("v_name_") or key.startswith("v_qty_"):
+            known_keys.append(key)
+            
+    for key in known_keys:
+        if key in st.session_state:
+            del st.session_state[key]
 
 
 # -----------------------------------------------------------------------------
@@ -254,6 +270,9 @@ st.markdown(
     "Please fill out the details below to generate an accurate quotation for your IML label range."
 )
 
+# Refresh Button with on_click Callback
+st.button("🔄 Refresh / Clear Form", on_click=reset_all_form_fields, use_container_width=True)
+
 with st.form("iml_quote_form"):
 
     # 1. QUANTITIES & VARIANTS
@@ -262,11 +281,11 @@ with st.form("iml_quote_form"):
     col1, col2 = st.columns(2)
     with col1:
         total_qty = st.number_input(
-            "Total Qty of IML Labels in Range", min_value=1, step=100, value=10000
+            "Total Qty of IML Labels in Range", min_value=1, step=100, value=10000, key="total_qty"
         )
     with col2:
         num_variants = st.number_input(
-            "No. of IML Label Variants in Range", min_value=1, step=1, value=1
+            "No. of IML Label Variants in Range", min_value=1, step=1, value=1, key="num_variants"
         )
 
     st.subheader("Variant Quantities & Descriptions")
@@ -298,11 +317,13 @@ with st.form("iml_quote_form"):
             "Substrate Colour",
             options=["White", "Clear"],
             horizontal=True,
+            key="substrate_colour"
         )
         substrate_type = st.radio(
             "Substrate Type",
             options=["Smooth", "Orange Peel"],
             horizontal=True,
+            key="substrate_type"
         )
 
     with col_sub2:
@@ -310,6 +331,7 @@ with st.form("iml_quote_form"):
             "Material Specifications",
             placeholder="Specify film thickness, barrier properties, or specific resin grade requirements...",
             height=120,
+            key="material_specs"
         )
 
     st.divider()
@@ -331,7 +353,7 @@ with st.form("iml_quote_form"):
     ]
 
     selected_jars = st.multiselect(
-        "Select Target Jars (Specify)", options=jar_options
+        "Select Target Jars (Specify)", options=jar_options, key="selected_jars"
     )
 
     st.divider()
@@ -344,46 +366,50 @@ with st.form("iml_quote_form"):
         colour_match_type = st.multiselect(
             "Colour Matching Method Required",
             options=["Pantone", "Match to target supplied"],
+            key="colour_match_type"
         )
 
         qty_pantone_match = 0
         pantone_refs = ""
         if "Pantone" in colour_match_type:
             qty_pantone_match = st.number_input(
-                "No. of labels to match to Pantone (Qty)", min_value=0, step=1
+                "No. of labels to match to Pantone (Qty)", min_value=0, step=1, key="qty_pantone_match"
             )
             pantone_refs = st.text_input(
                 "Specify Pantone References",
                 placeholder='e.g., "PMS 185 C, PMS 286 C"',
+                key="pantone_refs"
             )
 
         qty_target_match = 0
         target_refs = ""
         if "Match to target supplied" in colour_match_type:
             qty_target_match = st.number_input(
-                "No. of labels to match to Target (Qty)", min_value=0, step=1
+                "No. of labels to match to Target (Qty)", min_value=0, step=1, key="qty_target_match"
             )
             target_refs = st.text_input(
                 "Specify Target References / Samples",
                 placeholder='e.g., "Physical sample ref #1042"',
+                key="target_refs"
             )
 
     with col_c2:
         st.write("**Print Process & Proofing**")
         litho_print = st.radio(
-            "Litho Print Required?", options=["No", "Yes"], horizontal=True
+            "Litho Print Required?", options=["No", "Yes"], horizontal=True, key="litho_print"
         )
         digital_print = st.radio(
-            "Digital Print Required?", options=["No", "Yes"], horizontal=True
+            "Digital Print Required?", options=["No", "Yes"], horizontal=True, key="digital_print"
         )
 
         epson_proof_qty = st.number_input(
-            "Epson Proof (Qty)", min_value=0, step=1, value=1
+            "Epson Proof (Qty)", min_value=0, step=1, value=1, key="epson_proof_qty"
         )
         layflat_supplied = st.radio(
             "Layflat for layout and colour to be supplied?",
             options=["No", "Yes"],
             horizontal=True,
+            key="layflat_supplied"
         )
 
     st.divider()
@@ -392,7 +418,7 @@ with st.form("iml_quote_form"):
     st.header("5. Production Trials")
 
     trials_required = st.radio(
-        "Trials Required?", options=["No", "Yes"], horizontal=True
+        "Trials Required?", options=["No", "Yes"], horizontal=True, key="trials_required"
     )
 
     trial_variants = 0
@@ -402,7 +428,7 @@ with st.form("iml_quote_form"):
         col_t1, col_t2 = st.columns(2)
         with col_t1:
             trial_variants = st.number_input(
-                "Trials (No. of variants)", min_value=1, step=1, value=1
+                "Trials (No. of variants)", min_value=1, step=1, value=1, key="trial_variants"
             )
         with col_t2:
             trial_qty_per_variant = st.number_input(
@@ -410,6 +436,7 @@ with st.form("iml_quote_form"):
                 min_value=1,
                 step=100,
                 value=500,
+                key="trial_qty_per_variant"
             )
 
     st.divider()
@@ -469,12 +496,6 @@ with st.form("iml_quote_form"):
     )
 
 # -----------------------------------------------------------------------------
-# REFRESH / CLEAR BUTTON
-# -----------------------------------------------------------------------------
-if st.button("🔄 Refresh / Clear Form", use_container_width=True):
-    st.rerun()
-
-# -----------------------------------------------------------------------------
 # POST-SUBMISSION ACTIONS
 # -----------------------------------------------------------------------------
 if submit_button:
@@ -519,7 +540,7 @@ if submit_button:
         if sheet_updated:
             st.info("✅ Data appended to Google Sheet database.")
 
-    # 2. Generate PDF Document & Render Download Button
+    # 2. Generate PDF Document & Display Download Button
     with st.spinner("Generating client PDF quotation document..."):
         pdf_bytes = generate_pdf_quote(quote_data)
         
@@ -528,7 +549,7 @@ if submit_button:
             
             st.download_button(
                 label="📥 Download Quotation PDF",
-                data=bytes(pdf_bytes),  # <-- Explicitly convert bytearray to bytes
+                data=pdf_bytes,
                 file_name=filename,
                 mime="application/pdf",
                 use_container_width=True
