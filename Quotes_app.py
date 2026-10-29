@@ -202,14 +202,46 @@ def generate_pdf_quote(data: dict) -> bytes:
         key_value("Trial Qty per Variant:", f"{data['Trial Qty Per Variant']:,} units")
     pdf.ln(4)
 
-    # 6. Cost Summary
+    # 6. Financial Summary Table
     section_heading("6. Financial Summary")
-    key_value("Net Subtotal:", f"R {data['Net Subtotal']:,.2f}")
-    key_value("15% VAT:", f"R {data['VAT (15%)']:,.2f}")
-    key_value("Gross Total:", f"R {data['Gross Total']:,.2f}")
+    
+    # Table Header
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_fill_color(226, 232, 240)
+    pdf.cell(80, 6, "Task Description", border=1, fill=True)
+    pdf.cell(35, 6, "Net Value", border=1, align="R", fill=True)
+    pdf.cell(30, 6, "Qty", border=1, align="R", fill=True)
+    pdf.cell(35, 6, "Sub Total", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
+
+    # Table Content
+    pdf.set_font("Helvetica", "", 8)
+    financial_items = [
+        ("Colour Matching", data.get("cm_net_val", 0.0), data.get("cm_quantity", 0)),
+        ("Layflat", data.get("lf_net_val", 0.0), data.get("lf_quantity", 0)),
+        ("Production Trials", data.get("pt_net_val", 0.0), data.get("pt_quantity", 0)),
+    ]
+
+    for item_desc, net_val, qty in financial_items:
+        subtotal = net_val * qty
+        pdf.cell(80, 6, item_desc, border=1)
+        pdf.cell(35, 6, f"R {net_val:,.2f}", border=1, align="R")
+        pdf.cell(30, 6, str(qty), border=1, align="R")
+        pdf.cell(35, 6, f"R {subtotal:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+
+    # Financial Totals Block
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(145, 6, "Net Subtotal:", border=0, align="R")
+    pdf.cell(35, 6, f"R {data['Net Subtotal']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+
+    pdf.cell(145, 6, "15% VAT:", border=0, align="R")
+    pdf.cell(35, 6, f"R {data['VAT (15%)']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+
+    pdf.set_fill_color(241, 245, 249)
+    pdf.cell(145, 7, "Gross Total:", border=0, align="R")
+    pdf.cell(35, 7, f"R {data['Gross Total']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
     return pdf.output()
-
 
 # -----------------------------------------------------------------------------
 # STREAMLIT UI & FORM
