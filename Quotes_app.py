@@ -528,7 +528,7 @@ if submit_button:
             
             st.download_button(
                 label="📥 Download Quotation PDF",
-                data=pdf_bytes,
+                data=bytes(pdf_bytes),  # <-- Explicitly convert bytearray to bytes
                 file_name=filename,
                 mime="application/pdf",
                 use_container_width=True
