@@ -205,7 +205,6 @@ def generate_pdf_quote(data: dict) -> bytes:
     # 6. Financial Summary Table
     section_heading("6. Financial Summary")
     
-    # Table Header
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(226, 232, 240)
     pdf.cell(80, 6, "Task Description", border=1, fill=True)
@@ -213,7 +212,6 @@ def generate_pdf_quote(data: dict) -> bytes:
     pdf.cell(30, 6, "Qty", border=1, align="R", fill=True)
     pdf.cell(35, 6, "Sub Total", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
-    # Table Content
     pdf.set_font("Helvetica", "", 8)
     financial_items = [
         ("Colour Matching", data.get("cm_net_val", 0.0), data.get("cm_quantity", 0)),
@@ -228,7 +226,6 @@ def generate_pdf_quote(data: dict) -> bytes:
         pdf.cell(30, 6, str(qty), border=1, align="R")
         pdf.cell(35, 6, f"R {subtotal:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
 
-    # Financial Totals Block
     pdf.ln(2)
     pdf.set_font("Helvetica", "B", 9)
     pdf.cell(145, 6, "Net Subtotal:", border=0, align="R")
@@ -242,6 +239,7 @@ def generate_pdf_quote(data: dict) -> bytes:
     pdf.cell(35, 7, f"R {data['Gross Total']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
     return pdf.output()
+
 
 # -----------------------------------------------------------------------------
 # STREAMLIT UI & FORM
@@ -420,7 +418,6 @@ with st.form("iml_quote_form"):
     st.header("6. Financial Quotation Summary")
     st.caption("Specify net values and quantities for task items:")
 
-    # Headers for grid layout
     col_desc, col_val, col_qty, col_sub = st.columns([3, 2, 2, 2])
     col_desc.write("**Task Description**")
     col_val.write("**Net Value per Unit**")
@@ -503,6 +500,12 @@ if submit_button:
         "Trial Qty Per Variant": (
             trial_qty_per_variant if trials_required == "Yes" else 0
         ),
+        "cm_net_val": cm_net_val,
+        "cm_quantity": cm_quantity,
+        "lf_net_val": lf_net_val,
+        "lf_quantity": lf_quantity,
+        "pt_net_val": pt_net_val,
+        "pt_quantity": pt_quantity,
         "Net Subtotal": net_subtotal,
         "VAT (15%)": vat_amount,
         "Gross Total": gross_total,
@@ -516,6 +519,19 @@ if submit_button:
         if sheet_updated:
             st.info("✅ Data appended to Google Sheet database.")
 
-    # 2. Generate PDF Document
+    # 2. Generate PDF Document & Render Download Button
     with st.spinner("Generating client PDF quotation document..."):
         pdf_bytes = generate_pdf_quote(quote_data)
+        
+        if pdf_bytes and HAS_FPDF:
+            filename = f"IML_Quotation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            
+            st.download_button(
+                label="📥 Download Quotation PDF",
+                data=pdf_bytes,
+                file_name=filename,
+                mime="application/pdf",
+                use_container_width=True
+            )
+        elif not HAS_FPDF:
+            st.warning("`fpdf2` is not installed. Install it using `pip install fpdf2` to enable PDF downloads.")
