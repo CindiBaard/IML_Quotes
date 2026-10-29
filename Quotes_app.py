@@ -485,4 +485,5 @@ if submit_button:
             st.info("✅ Data appended to Google Sheet database.")
 
     # 2. Generate PDF Document
-    with st.spinner("Generating client PDF quotation docum
+    with st.spinner("Generating client PDF quotation document..."):
+        pdf_bytes = generate_pdf_quote(quote_data)
