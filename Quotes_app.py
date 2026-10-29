@@ -3,7 +3,6 @@ import streamlit as st
 
 st.write("Python executable being used by Streamlit:", sys.executable)
 
-import streamlit as st
 import pandas as pd
 from datetime import datetime
 import io
@@ -57,7 +56,8 @@ def append_to_google_sheets(data: dict):
             "Substrate Colour", "Substrate Type", "Material Specs", "Target Jars",
             "Colour Matching", "Pantone Qty", "Pantone Refs", "Target Qty",
             "Target Refs", "Litho Print", "Digital Print", "Epson Proof Qty",
-            "Layflat Supplied", "Trials Required", "Trial Variants", "Trial Qty Per Variant"
+            "Layflat Supplied", "Trials Required", "Trial Variants", "Trial Qty Per Variant",
+            "Net Subtotal", "15% VAT", "Gross Total"
         ]
         
         existing_row1 = sheet.row_values(1)
@@ -85,7 +85,10 @@ def append_to_google_sheets(data: dict):
             data["Layflat Supplied"],
             data["Trials Required"],
             data["Trial Variants"],
-            data["Trial Qty Per Variant"]
+            data["Trial Qty Per Variant"],
+            data["Net Subtotal"],
+            data["VAT (15%)"],
+            data["Gross Total"]
         ]
 
         # Single append call to ensure only 1 new row is added
@@ -94,12 +97,13 @@ def append_to_google_sheets(data: dict):
     except Exception as e:
         st.error(f"Failed to append to Google Sheet: {e}")
         return False
+
+
 def generate_pdf_quote(data: dict) -> bytes:
     """
     Generates a clean PDF document for the client using FPDF.
     """
     if not HAS_FPDF:
-        # Fallback dummy text if FPDF isn't installed
         return b"PDF Generation requires 'fpdf2' package."
 
     class PDF(FPDF):
@@ -196,6 +200,13 @@ def generate_pdf_quote(data: dict) -> bytes:
     if data["Trials Required"] == "Yes":
         key_value("Trial Variants:", data["Trial Variants"])
         key_value("Trial Qty per Variant:", f"{data['Trial Qty Per Variant']:,} units")
+    pdf.ln(4)
+
+    # 6. Cost Summary
+    section_heading("6. Financial Summary")
+    key_value("Net Subtotal:", f"R {data['Net Subtotal']:,.2f}")
+    key_value("15% VAT:", f"R {data['VAT (15%)']:,.2f}")
+    key_value("Gross Total:", f"R {data['Gross Total']:,.2f}")
 
     return pdf.output()
 
@@ -373,10 +384,66 @@ with st.form("iml_quote_form"):
 
     st.divider()
 
+    # 6. FINANCIAL COST SUMMARY
+    st.header("6. Financial Quotation Summary")
+    st.caption("Specify net values and quantities for task items:")
+
+    # Headers for grid layout
+    col_desc, col_val, col_qty, col_sub = st.columns([3, 2, 2, 2])
+    col_desc.write("**Task Description**")
+    col_val.write("**Net Value per Unit**")
+    col_qty.write("**Quantity**")
+    col_sub.write("**Sub Total**")
+
+    # Item 1: Colour Matching
+    c_desc, c_val, c_qty, c_sub = st.columns([3, 2, 2, 2])
+    c_desc.write("Colour Matching")
+    cm_net_val = c_val.number_input("Net Value", min_value=0.0, value=0.0, step=10.0, key="cm_net", label_visibility="collapsed")
+    cm_quantity = c_qty.number_input("Quantity", min_value=0, value=0, step=1, key="cm_qty", label_visibility="collapsed")
+    cm_subtotal = cm_net_val * cm_quantity
+    c_sub.markdown(f"**R {cm_subtotal:,.2f}**")
+
+    # Item 2: Layflat
+    l_desc, l_val, l_qty, l_sub = st.columns([3, 2, 2, 2])
+    l_desc.write("Layflat")
+    lf_net_val = l_val.number_input("Net Value", min_value=0.0, value=0.0, step=10.0, key="lf_net", label_visibility="collapsed")
+    lf_quantity = l_qty.number_input("Quantity", min_value=0, value=0, step=1, key="lf_qty", label_visibility="collapsed")
+    lf_subtotal = lf_net_val * lf_quantity
+    l_sub.markdown(f"**R {lf_subtotal:,.2f}**")
+
+    # Item 3: Production Trials
+    p_desc, p_val, p_qty, p_sub = st.columns([3, 2, 2, 2])
+    p_desc.write("Production Trials")
+    pt_net_val = p_val.number_input("Net Value", min_value=0.0, value=0.0, step=10.0, key="pt_net", label_visibility="collapsed")
+    pt_quantity = p_qty.number_input("Quantity", min_value=0, value=0, step=1, key="pt_qty", label_visibility="collapsed")
+    pt_subtotal = pt_net_val * pt_quantity
+    p_sub.markdown(f"**R {pt_subtotal:,.2f}**")
+
+    st.divider()
+
+    # Totals Calculation
+    net_subtotal = cm_subtotal + lf_subtotal + pt_subtotal
+    vat_amount = net_subtotal * 0.15
+    gross_total = net_subtotal + vat_amount
+
+    tot_col1, tot_col2 = st.columns([6, 3])
+    with tot_col2:
+        st.write(f"**Net Subtotal:** R {net_subtotal:,.2f}")
+        st.write(f"**15% VAT:** R {vat_amount:,.2f}")
+        st.subheader(f"Gross Total: R {gross_total:,.2f}")
+
+    st.divider()
+
     # SUBMIT BUTTON
     submit_button = st.form_submit_button(
         "Submit Quotation Request", use_container_width=True
     )
+
+# -----------------------------------------------------------------------------
+# REFRESH / CLEAR BUTTON
+# -----------------------------------------------------------------------------
+if st.button("🔄 Refresh / Clear Form", use_container_width=True):
+    st.rerun()
 
 # -----------------------------------------------------------------------------
 # POST-SUBMISSION ACTIONS
@@ -404,6 +471,9 @@ if submit_button:
         "Trial Qty Per Variant": (
             trial_qty_per_variant if trials_required == "Yes" else 0
         ),
+        "Net Subtotal": net_subtotal,
+        "VAT (15%)": vat_amount,
+        "Gross Total": gross_total,
     }
 
     st.success("🎉 Quotation request processed successfully!")
@@ -415,5 +485,4 @@ if submit_button:
             st.info("✅ Data appended to Google Sheet database.")
 
     # 2. Generate PDF Document
-    with st.spinner("Generating client PDF quotation document..."):
-        pdf_bytes = generate_pdf_quote(quote_data)
+    with st.spinner("Generating client PDF quotation docum
