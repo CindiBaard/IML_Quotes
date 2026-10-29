@@ -2,6 +2,8 @@ import sys
 import streamlit as st
 
 st.write("Python executable being used by Streamlit:", sys.executable)
+
+import streamlit as st
 import pandas as pd
 from datetime import datetime
 import io
@@ -12,9 +14,8 @@ try:
     import gspread
     from google.oauth2.service_account import Credentials
     HAS_GSPREAD = True
-except Exception as e:
+except ImportError:
     HAS_GSPREAD = False
-    st.error(f"Import Error details: {e}")
 
 # Optional import for PDF generation:
 # pip install fpdf2
@@ -50,7 +51,7 @@ def append_to_google_sheets(data: dict):
         SHEET_ID = "1b4Io3QvIJNgI29H1mLSdugKV1nOockWHx-dFuh8YUyE"
         sheet = client.open_by_key(SHEET_ID).sheet1
 
-        # Check if the worksheet is empty and add headers
+        # Check if row 1 is empty and add headers only if missing
         headers = [
             "Timestamp", "Total Quantity", "No of Variants", "Variant Details",
             "Substrate Colour", "Substrate Type", "Material Specs", "Target Jars",
@@ -59,10 +60,11 @@ def append_to_google_sheets(data: dict):
             "Layflat Supplied", "Trials Required", "Trial Variants", "Trial Qty Per Variant"
         ]
         
-        if not sheet.row_values(1):
+        existing_row1 = sheet.row_values(1)
+        if not existing_row1:
             sheet.append_row(headers)
 
-        # Format row data
+        # Single row representation of the form data
         row = [
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             data["Total Quantity"],
@@ -86,13 +88,12 @@ def append_to_google_sheets(data: dict):
             data["Trial Qty Per Variant"]
         ]
 
+        # Single append call to ensure only 1 new row is added
         sheet.append_row(row)
         return True
     except Exception as e:
         st.error(f"Failed to append to Google Sheet: {e}")
         return False
-
-
 def generate_pdf_quote(data: dict) -> bytes:
     """
     Generates a clean PDF document for the client using FPDF.
@@ -172,6 +173,7 @@ def generate_pdf_quote(data: dict) -> bytes:
         pdf.set_font("Helvetica", "I", 9)
         pdf.cell(0, 5, "No specific jar configurations selected.", border=False, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
+
     # 4. Print & Colour
     section_heading("4. Print & Colour Specifications")
     key_value("Colour Matching Methods:", ", ".join(data["Colour Matching"]) if data["Colour Matching"] else "None specified")
