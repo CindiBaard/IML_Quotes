@@ -23,6 +23,8 @@ except ImportError:
 # DIGITAL TRIAL DIELINE MASTER DATA (EXTRACTED FROM REN-FLEX PDF QUOTES)
 # -----------------------------------------------------------------------------
 
+CLEAR_MARKUP_MULTIPLIER = 1.05  # +5% markup for Clear substrate
+
 DIELINE_SPECS = {
     "Die 173 - 250ml Jar (274.395mm x 44.121mm)": {
         "quote_ref": "10794/01",
@@ -30,8 +32,7 @@ DIELINE_SPECS = {
         "jar_name": "250ml Jar",
         "size_mm": "274.395mm x 44.121mm",
         "moq": 25000,
-        "unit_price": 0.5162,
-        "run_subtotal": 12905.00,
+        "base_unit_price": 0.5162,
     },
     "Die 174 - 350ml Jar (274.392mm x 60.183mm)": {
         "quote_ref": "10795/01",
@@ -39,8 +40,7 @@ DIELINE_SPECS = {
         "jar_name": "350ml Jar",
         "size_mm": "274.392mm x 60.183mm",
         "moq": 18000,
-        "unit_price": 0.7082,
-        "run_subtotal": 12747.60,
+        "base_unit_price": 0.7082,
     },
     "Die 175 - 450ml Jar (274.387mm x 82.041mm)": {
         "quote_ref": "10796/01",
@@ -48,8 +48,7 @@ DIELINE_SPECS = {
         "jar_name": "450ml Jar",
         "size_mm": "274.387mm x 82.041mm",
         "moq": 13500,
-        "unit_price": 0.9650,
-        "run_subtotal": 13027.50,
+        "base_unit_price": 0.9650,
     },
     "Die 176 - 500ml Jar (291.273mm x 84.605mm)": {
         "quote_ref": "10797/01",
@@ -57,8 +56,7 @@ DIELINE_SPECS = {
         "jar_name": "500ml Jar",
         "size_mm": "291.273mm x 84.605mm",
         "moq": 13500,
-        "unit_price": 0.9650,
-        "run_subtotal": 13027.50,
+        "base_unit_price": 0.9650,
     },
     "Die 189 - 450ml Std Lightweight Jar (275.378mm x 87.066mm)": {
         "quote_ref": "10798/01",
@@ -66,8 +64,7 @@ DIELINE_SPECS = {
         "jar_name": "450ml Std Lightweight Jar",
         "size_mm": "275.378mm x 87.066mm",
         "moq": 13500,
-        "unit_price": 0.9650,
-        "run_subtotal": 13027.50,
+        "base_unit_price": 0.9650,
     },
     "Die 211 - 500ml Eve Clicks Tub (292.304mm x 81.936mm)": {
         "quote_ref": "10799/01",
@@ -75,8 +72,7 @@ DIELINE_SPECS = {
         "jar_name": "500ml Eve Clicks Tub",
         "size_mm": "292.304mm x 81.936mm",
         "moq": 13500,
-        "unit_price": 0.9650,
-        "run_subtotal": 13027.50,
+        "base_unit_price": 0.9650,
     },
     "Die 216 - Clicks Labels (292.304mm x 81.936mm)": {
         "quote_ref": "10800/01",
@@ -84,8 +80,7 @@ DIELINE_SPECS = {
         "jar_name": "Clicks Labels",
         "size_mm": "292.304mm x 81.936mm",
         "moq": 13500,
-        "unit_price": 0.9650,
-        "run_subtotal": 13027.50,
+        "base_unit_price": 0.9650,
     },
     "Die 264 - 250ml Fabupharm (269.908mm x 44.967mm)": {
         "quote_ref": "10801/01",
@@ -93,18 +88,35 @@ DIELINE_SPECS = {
         "jar_name": "250ml Fabupharm",
         "size_mm": "269.908mm x 44.967mm",
         "moq": 25000,
-        "unit_price": 0.5162,
-        "run_subtotal": 12905.00,
+        "base_unit_price": 0.5162,
     },
 }
 
 DIELINE_OPTIONS = list(DIELINE_SPECS.keys())
 
-DEFAULT_MATERIAL_SPECS = (
-    "IML White Gloss, 60mic | Printed CMYK front only | "
+WHITE_MATERIAL_SPECS = (
+    "Printed CMYK front only on IML White Gloss, 60mic | "
     "Finishing: Waterbased Varnish, Die Cutting - Digital | Other Material: Primer | "
     "Note: Subject to +/-10% over/under delivery"
 )
+
+CLEAR_MATERIAL_SPECS = (
+    "Printed CMYK + double -white front only on IML Clear, 60mic | "
+    "Finishing: Waterbased Varnish, Die Cutting - Digital | Other Material: Primer | "
+    "Note: Subject to +/-10% over/under delivery"
+)
+
+
+def get_effective_unit_price(base_price: float, substrate_colour: str) -> float:
+    """Returns the unit price with a +5% markup if Clear substrate is selected."""
+    if substrate_colour == "Clear":
+        return round(base_price * CLEAR_MARKUP_MULTIPLIER, 4)
+    return base_price
+
+
+def pdf_safe_text(text) -> str:
+    """Sanitizes characters (such as em-dashes) so core Helvetica FPDF fonts never fail."""
+    return str(text).replace("—", "-").replace("–", "-")
 
 
 # -----------------------------------------------------------------------------
@@ -205,21 +217,22 @@ def generate_pdf_quote(data: dict) -> bytes:
     pdf.set_auto_page_break(auto=True, margin=15)
 
     def section_heading(title):
+        pdf.set_x(pdf.l_margin)
         pdf.set_font("Helvetica", "B", 11)
         pdf.set_fill_color(241, 245, 249)
         pdf.set_text_color(15, 23, 42)
-        pdf.cell(0, 7, f"  {title}", border=False, new_x="LMARGIN", new_y="NEXT", fill=True)
+        pdf.cell(0, 7, f"  {pdf_safe_text(title)}", border=False, new_x="LMARGIN", new_y="NEXT", fill=True)
         pdf.ln(2)
 
     def key_value(key, value):
         pdf.set_x(pdf.l_margin)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_text_color(71, 85, 105)
-        pdf.cell(60, 6, str(key), border=False)
+        pdf.cell(60, 6, pdf_safe_text(key), border=False)
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(15, 23, 42)
         remaining_width = pdf.w - pdf.r_margin - pdf.get_x()
-        pdf.multi_cell(remaining_width, 6, str(value), border=False)
+        pdf.multi_cell(remaining_width, 6, pdf_safe_text(value), border=False)
 
     # 1. Dieline & Variant Allocation
     section_heading("1. Dieline Specification & Variant Breakdown")
@@ -230,6 +243,7 @@ def generate_pdf_quote(data: dict) -> bytes:
     key_value("Number of Variants:", data["No of Variants"])
     pdf.ln(2)
 
+    pdf.set_x(pdf.l_margin)
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(226, 232, 240)
     pdf.cell(125, 6, "Label Design / Variant Description", border=1, fill=True)
@@ -238,7 +252,8 @@ def generate_pdf_quote(data: dict) -> bytes:
 
     pdf.set_font("Helvetica", "", 8)
     for v in data["Variant Details"]:
-        v_name = v["variant"] if v["variant"] else "Unnamed Label Design"
+        pdf.set_x(pdf.l_margin)
+        v_name = pdf_safe_text(v["variant"]) if v["variant"] else "Unnamed Label Design"
         pct = (v["quantity"] / data["Total Quantity"] * 100) if data["Total Quantity"] > 0 else 0
         pdf.cell(125, 6, v_name[:75], border=1)
         pdf.cell(35, 6, f"{v['quantity']:,}", border=1, align="R")
@@ -247,7 +262,12 @@ def generate_pdf_quote(data: dict) -> bytes:
 
     # 2. Substrate
     section_heading("2. Substrate Specifications")
-    key_value("Substrate Colour:", data["Substrate Colour"])
+    substrate_display = (
+        "Clear (+5% Substrate Markup Applied)"
+        if data["Substrate Colour"] == "Clear"
+        else "White (Standard)"
+    )
+    key_value("Substrate Colour:", substrate_display)
     key_value("Substrate Finish:", data["Substrate Type"])
     key_value("Material Specs:", data["Material Specs"] if data["Material Specs"] else "Standard Specification")
     pdf.ln(4)
@@ -271,6 +291,7 @@ def generate_pdf_quote(data: dict) -> bytes:
     # 4. Financial Summary Table
     section_heading("4. Financial Summary")
     
+    pdf.set_x(pdf.l_margin)
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(226, 232, 240)
     pdf.cell(95, 6, "Task Description", border=1, fill=True)
@@ -278,8 +299,10 @@ def generate_pdf_quote(data: dict) -> bytes:
     pdf.cell(25, 6, "MOQ Qty", border=1, align="R", fill=True)
     pdf.cell(35, 6, "Sub Total", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
+    pdf.set_x(pdf.l_margin)
     pdf.set_font("Helvetica", "", 8)
-    desc = f"Digital Trial Run: {data['Die Code']} ({data['Jar Name']}) - {data['No of Variants']} variant(s)"
+    substrate_tag = "IML Clear (+5%)" if data["Substrate Colour"] == "Clear" else "IML White"
+    desc = pdf_safe_text(f"Digital Trial Run: {data['Die Code']} ({data['Jar Name']}) - {substrate_tag}")
     pdf.cell(95, 6, desc[:55], border=1)
     pdf.cell(35, 6, f"R {data['Unit Price']:.4f}", border=1, align="R")
     pdf.cell(25, 6, f"{data['Total Quantity']:,}", border=1, align="R")
@@ -292,6 +315,7 @@ def generate_pdf_quote(data: dict) -> bytes:
     ]
 
     for item_desc, net_val, qty in extra_items:
+        pdf.set_x(pdf.l_margin)
         subtotal = net_val * qty
         pdf.cell(95, 6, item_desc, border=1)
         pdf.cell(35, 6, f"R {net_val:,.2f}", border=1, align="R")
@@ -299,13 +323,16 @@ def generate_pdf_quote(data: dict) -> bytes:
         pdf.cell(35, 6, f"R {subtotal:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
 
     pdf.ln(2)
+    pdf.set_x(pdf.l_margin)
     pdf.set_font("Helvetica", "B", 9)
     pdf.cell(155, 6, "Net Subtotal:", border=0, align="R")
     pdf.cell(35, 6, f"R {data['Net Subtotal']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
 
+    pdf.set_x(pdf.l_margin)
     pdf.cell(155, 6, "15% VAT:", border=0, align="R")
     pdf.cell(35, 6, f"R {data['VAT (15%)']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
 
+    pdf.set_x(pdf.l_margin)
     pdf.set_fill_color(241, 245, 249)
     pdf.cell(155, 7, "Gross Total:", border=0, align="R")
     pdf.cell(35, 7, f"R {data['Gross Total']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
@@ -328,6 +355,15 @@ def distribute_moq_evenly():
 
     for idx in range(n_vars):
         st.session_state[f"v_qty_{idx}"] = base_share + (1 if idx < remainder else 0)
+
+
+def on_substrate_colour_change():
+    """Updates the Material Specifications description when toggling White vs Clear."""
+    colour = st.session_state.get("substrate_colour", "White")
+    if colour == "Clear":
+        st.session_state["material_specs"] = CLEAR_MATERIAL_SPECS
+    else:
+        st.session_state["material_specs"] = WHITE_MATERIAL_SPECS
 
 
 def reset_all_form_fields():
@@ -353,13 +389,26 @@ st.set_page_config(
     page_title="IML Digital Trial Quotation Form", page_icon="🏷️", layout="wide"
 )
 
+# Initialize defaults before rendering so substrate selection immediately drives pricing & specs
+if "selected_dieline" not in st.session_state:
+    st.session_state["selected_dieline"] = DIELINE_OPTIONS[0]
+if "num_variants" not in st.session_state:
+    st.session_state["num_variants"] = 1
+if "substrate_colour" not in st.session_state:
+    st.session_state["substrate_colour"] = "White"
+if "material_specs" not in st.session_state:
+    st.session_state["material_specs"] = WHITE_MATERIAL_SPECS
+
+current_substrate = st.session_state["substrate_colour"]
+
 st.title("🏷️ In-Mould Label (IML) Digital Trial Quotation")
 st.markdown(
-    "Select **one Dieline / Jar Size** below and split its **MOQ** across one or more label designs/variants. The sum of all variant quantities must equal the dieline's **MOQ**."
+    "Select **one Dieline / Jar Size** below and split its **MOQ** across one or more label designs/variants. "
+    "Selecting **Clear** substrate applies a **+5% markup** to all dieline unit prices."
 )
 
-# Master Reference Table
-with st.expander("📋 View Ren-Flex Digital Trial MOQ & Pricing Schedule (Quotes 10794–10801)", expanded=False):
+# Master Reference Table (Reflects active White vs Clear pricing dynamically)
+with st.expander(f"📋 View Ren-Flex Digital Trial MOQ & Pricing Schedule ({current_substrate} Substrate)", expanded=False):
     ref_df = pd.DataFrame([
         {
             "Quote Ref": v["quote_ref"],
@@ -367,8 +416,9 @@ with st.expander("📋 View Ren-Flex Digital Trial MOQ & Pricing Schedule (Quote
             "Jar / Format": v["jar_name"],
             "Label Dimensions": v["size_mm"],
             "Trial MOQ (Total Run)": f"{v['moq']:,}",
-            "Unit Price (Excl. VAT)": f"R {v['unit_price']:.4f}",
-            "Single Trial Run Charge": f"R {v['run_subtotal']:,.2f}",
+            "White Unit Price": f"R {v['base_unit_price']:.4f}",
+            "Clear Unit Price (+5%)": f"R {get_effective_unit_price(v['base_unit_price'], 'Clear'):.4f}",
+            f"Active Trial Run Charge ({current_substrate})": f"R {v['moq'] * get_effective_unit_price(v['base_unit_price'], current_substrate):,.2f}",
         }
         for v in DIELINE_SPECS.values()
     ])
@@ -385,11 +435,6 @@ st.divider()
 # 1. SINGLE DIELINE SELECTION & VARIANT SPLIT
 # -----------------------------------------------------------------------------
 st.header("1. Dieline Selection & Variant Breakdown")
-
-if "selected_dieline" not in st.session_state:
-    st.session_state["selected_dieline"] = DIELINE_OPTIONS[0]
-if "num_variants" not in st.session_state:
-    st.session_state["num_variants"] = 1
 
 top_c1, top_c2, top_c3, top_c4 = st.columns([3, 1.3, 1.3, 1.4])
 with top_c1:
@@ -413,18 +458,24 @@ with top_c2:
     )
 
 required_moq = spec["moq"]
-unit_price = spec["unit_price"]
+base_unit_price = spec["base_unit_price"]
+unit_price = get_effective_unit_price(base_unit_price, current_substrate)
 run_charge = required_moq * unit_price
 
 with top_c3:
     st.metric("Required MOQ (Total Qty)", f"{required_moq:,}")
 
 with top_c4:
+    price_note = (
+        f"@ R {unit_price:.4f} / label (+5% Clear)"
+        if current_substrate == "Clear"
+        else f"@ R {unit_price:.4f} / label (White)"
+    )
     st.metric(
         "Digital Trial Run Charge",
         f"R {run_charge:,.2f}",
-        delta=f"@ R {unit_price:.4f} / label",
-        delta_color="off"
+        delta=price_note,
+        delta_color="normal" if current_substrate == "Clear" else "off"
     )
 
 st.subheader("Allocate MOQ Across Label Designs / Variants")
@@ -495,11 +546,15 @@ st.header("2. Substrate Specifications")
 col_sub1, col_sub2 = st.columns(2)
 with col_sub1:
     substrate_colour = st.radio(
-        "Substrate Colour",
+        "Substrate Colour (Clear adds +5% to Unit Price)",
         options=["White", "Clear"],
         horizontal=True,
-        key="substrate_colour"
+        key="substrate_colour",
+        on_change=on_substrate_colour_change,
     )
+    if substrate_colour == "Clear":
+        st.info("ℹ️ **Clear IML selected:** +5% markup applied to unit price and description updated to double-white printing.")
+
     substrate_type = st.radio(
         "Substrate Type",
         options=["Smooth", "Orange Peel"],
@@ -508,8 +563,6 @@ with col_sub1:
     )
 
 with col_sub2:
-    if "material_specs" not in st.session_state:
-        st.session_state["material_specs"] = DEFAULT_MATERIAL_SPECS
     material_specs = st.text_area(
         "Material Specifications",
         height=120,
@@ -590,7 +643,8 @@ col_sub.write("**Sub Total**")
 
 # Auto-populated Digital Trial Run (Single Charge)
 r_desc, r_val, r_qty, r_sub = st.columns([3.5, 2, 1.5, 2])
-r_desc.write(f"Digital Trial Run: **{spec['die_code']} — {spec['jar_name']}** ({int(n_vars)} variant(s))")
+substrate_label = "IML Clear +5%" if substrate_colour == "Clear" else "IML White Gloss"
+r_desc.write(f"Digital Trial Run: **{spec['die_code']} — {spec['jar_name']}** ({substrate_label}, {int(n_vars)} variant(s))")
 r_val.write(f"R {unit_price:.4f}")
 r_qty.write(f"{required_moq:,}")
 r_sub.markdown(f"**R {run_charge:,.2f}**")
@@ -656,6 +710,7 @@ if submit_button and is_moq_valid:
         "Total Quantity": required_moq,
         "No of Variants": int(n_vars),
         "Variant Details": variant_details,
+        "Base Unit Price": base_unit_price,
         "Unit Price": unit_price,
         "Trial Run Charge": run_charge,
         "Substrate Colour": substrate_colour,
