@@ -548,7 +548,7 @@ if "material_specs" not in st.session_state:
 
 current_substrate = st.session_state["substrate_colour"]
 
-st.title("🏷️ In-Mould Label (IML) Digital Trial Quotation & Order Builder")
+st.title("🏷️ Bowler Packaging In-Mould Label (IML) Digital Trial Quotation & Order Builder")
 st.markdown(
     "Configure your **Dieline & Variant Split**, apply optional **Client Markup %** on selected line items before exporting the **Client PDF Quote**, or **Convert directly to a Purchase Order for Ren-Flex**."
 )
