@@ -533,7 +533,7 @@ def reset_all_form_fields():
 # -----------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="IML Digital Trial Quotation & Order Form", page_icon="🏷️", layout="wide"
+    page_title="Bowler Packaging IML Digital Trial Quotation & Order Form", page_icon="🏷️", layout="wide"
 )
 
 # Initialize defaults before rendering
