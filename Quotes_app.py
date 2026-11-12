@@ -212,12 +212,14 @@ def generate_pdf_quote(data: dict) -> bytes:
         pdf.ln(2)
 
     def key_value(key, value):
+        pdf.set_x(pdf.l_margin)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_text_color(71, 85, 105)
-        pdf.cell(60, 6, key, border=False)
+        pdf.cell(60, 6, str(key), border=False)
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(15, 23, 42)
-        pdf.multi_cell(0, 6, str(value), border=False)
+        remaining_width = pdf.w - pdf.r_margin - pdf.get_x()
+        pdf.multi_cell(remaining_width, 6, str(value), border=False)
 
     # 1. Dieline & Variant Allocation
     section_heading("1. Dieline Specification & Variant Breakdown")
