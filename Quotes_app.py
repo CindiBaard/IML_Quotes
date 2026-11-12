@@ -23,8 +23,17 @@ except ImportError:
 # DIGITAL TRIAL DIELINE MASTER DATA & PRICING CONSTANTS
 # -----------------------------------------------------------------------------
 
-CLEAR_MARKUP_MULTIPLIER = 1.05  # +5% markup for Clear substrate
-EPSON_PROOF_UNIT_COST = 650.00  # R 650.00 per Epson proof
+CLEAR_MARKUP_MULTIPLIER = 1.05  # +5% substrate markup for Clear IML
+EPSON_PROOF_UNIT_COST = 650.00  # R 650.00 base cost per Epson proof
+
+RENFLEX_SUPPLIER_DETAILS = {
+    "name": "REN-MEDIA CC t/a REN-FLEX",
+    "reg_no": "2002/030011/23",
+    "vat_no": "4900228500",
+    "address": "37 Kimberley Booysens, Cnr Garland Road, Ophirton, Johannesburg, 2001 / PO Box 1125, Southdale 2135",
+    "tel": "(011) 493 1575",
+    "rep": "Francois",
+}
 
 DIELINE_SPECS = {
     "Die 173 - 250ml Jar (274.395mm x 44.121mm)": {
@@ -109,7 +118,7 @@ CLEAR_MATERIAL_SPECS = (
 
 
 def get_effective_unit_price(base_price: float, substrate_colour: str) -> float:
-    """Returns the unit price with a +5% markup if Clear substrate is selected."""
+    """Returns the supplier unit price with a +5% markup if Clear substrate is selected."""
     if substrate_colour == "Clear":
         return round(base_price * CLEAR_MARKUP_MULTIPLIER, 4)
     return base_price
@@ -158,6 +167,7 @@ def append_to_google_sheets(data: dict):
             sheet.append_row(headers)
 
         variant_list = [f"{v['variant']}: {v['quantity']}" for v in data["Variant Details"]]
+        doc_tag = f"ORDER ({data['PO Number']})" if data["Document Type"] == "Ren-Flex Order" else "CLIENT QUOTE"
 
         row = [
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -177,12 +187,12 @@ def append_to_google_sheets(data: dict):
             data["Digital Print"],
             data["Epson Proof Qty"],
             data["Layflat Supplied"],
-            "Yes (Digital Trial Quote)",
+            f"Yes ({doc_tag} | Base Net: R{data['Base Net Subtotal']:,.2f})",
             data["No of Variants"],
             "Split across variants to MOQ",
-            data["Net Subtotal"],
-            data["VAT (15%)"],
-            data["Gross Total"]
+            data["Client Net Subtotal"],
+            data["Client VAT (15%)"],
+            data["Client Gross Total"]
         ]
 
         sheet.append_row(row)
@@ -192,8 +202,8 @@ def append_to_google_sheets(data: dict):
         return False
 
 
-def generate_pdf_quote(data: dict) -> bytes:
-    """Generates a clean PDF document for the single-dieline digital trial quotation."""
+def generate_client_pdf_quote(data: dict) -> bytes:
+    """Generates the Client Quotation PDF using the marked-up client selling prices."""
     if not HAS_FPDF:
         return b"PDF Generation requires 'fpdf2' package."
 
@@ -204,14 +214,15 @@ def generate_pdf_quote(data: dict) -> bytes:
             self.cell(0, 10, "In-Mould Label (IML) Digital Trial Quotation", border=False, new_x="LMARGIN", new_y="NEXT", align="L")
             self.set_font("Helvetica", "", 9)
             self.set_text_color(100, 116, 139)
-            self.cell(0, 5, f"Generated on: {datetime.now().strftime('%d %B %Y')} | Quote Ref: #IML-TRIAL-{datetime.now().strftime('%M%S')}", border=False, new_x="LMARGIN", new_y="NEXT", align="L")
+            client_str = f" | Client: {pdf_safe_text(data['Client Name'])}" if data.get("Client Name") else ""
+            self.cell(0, 5, f"Generated on: {datetime.now().strftime('%d %B %Y')} | Quote Ref: #IML-Q-{datetime.now().strftime('%M%S')}{client_str}", border=False, new_x="LMARGIN", new_y="NEXT", align="L")
             self.ln(5)
 
         def footer(self):
             self.set_y(-15)
             self.set_font("Helvetica", "I", 8)
             self.set_text_color(148, 163, 184)
-            self.cell(0, 10, f"Page {self.page_no()} | Confidential IML Digital Trial Quote", align="C")
+            self.cell(0, 10, f"Page {self.page_no()} | Valid for 30 days | Subject to +/-10% over/under delivery", align="C")
 
     pdf = PDF()
     pdf.add_page()
@@ -237,9 +248,10 @@ def generate_pdf_quote(data: dict) -> bytes:
 
     # 1. Dieline & Variant Allocation
     section_heading("1. Dieline Specification & Variant Breakdown")
+    if data.get("Client Name"):
+        key_value("Prepared For:", data["Client Name"])
     key_value("Selected Dieline / Jar:", data["Selected Dieline"])
     key_value("Label Dimensions:", data["Dieline Size"])
-    key_value("Ren-Flex Quote Ref:", data["Quote Ref"])
     key_value("Total Trial MOQ:", f"{data['Total Quantity']:,} labels")
     key_value("Number of Variants:", data["No of Variants"])
     pdf.ln(2)
@@ -263,12 +275,7 @@ def generate_pdf_quote(data: dict) -> bytes:
 
     # 2. Substrate
     section_heading("2. Substrate Specifications")
-    substrate_display = (
-        "Clear (+5% Substrate Markup Applied)"
-        if data["Substrate Colour"] == "Clear"
-        else "White (Standard)"
-    )
-    key_value("Substrate Colour:", substrate_display)
+    key_value("Substrate Colour:", data["Substrate Colour"])
     key_value("Substrate Finish:", data["Substrate Type"])
     key_value("Material Specs:", data["Material Specs"] if data["Material Specs"] else "Standard Specification")
     pdf.ln(4)
@@ -285,67 +292,180 @@ def generate_pdf_quote(data: dict) -> bytes:
     
     key_value("Litho Print Required:", data["Litho Print"])
     key_value("Digital Print Required:", data["Digital Print"])
-    key_value("Epson Proofs Required:", f"{data['Epson Proof Qty']} proof(s) @ R {EPSON_PROOF_UNIT_COST:,.2f} each")
+    key_value("Epson Proofs Required:", f"{data['Epson Proof Qty']} proof(s)")
     key_value("Layflat Supplied:", data["Layflat Supplied"])
     pdf.ln(4)
 
-    # 4. Financial Summary Table
-    section_heading("4. Financial Summary")
+    # 4. Client Financial Summary Table (Marked-Up Client Prices)
+    section_heading("4. Quotation Pricing Summary")
     
     pdf.set_x(pdf.l_margin)
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(226, 232, 240)
-    pdf.cell(95, 6, "Task Description", border=1, fill=True)
+    pdf.cell(95, 6, "Description", border=1, fill=True)
     pdf.cell(35, 6, "Unit Price", border=1, align="R", fill=True)
     pdf.cell(25, 6, "Qty", border=1, align="R", fill=True)
     pdf.cell(35, 6, "Sub Total", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
-    pdf.set_x(pdf.l_margin)
-    pdf.set_font("Helvetica", "", 8)
-    substrate_tag = "IML Clear (+5%)" if data["Substrate Colour"] == "Clear" else "IML White"
-    desc = pdf_safe_text(f"Digital Trial Run: {data['Die Code']} ({data['Jar Name']}) - {substrate_tag}")
-    pdf.cell(95, 6, desc[:55], border=1)
-    pdf.cell(35, 6, f"R {data['Unit Price']:.4f}", border=1, align="R")
-    pdf.cell(25, 6, f"{data['Total Quantity']:,}", border=1, align="R")
-    pdf.cell(35, 6, f"R {data['Trial Run Charge']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
-
-    # Epson Proofs Line Item
-    pdf.set_x(pdf.l_margin)
-    epson_qty = data.get("Epson Proof Qty", 0)
-    epson_subtotal = epson_qty * EPSON_PROOF_UNIT_COST
-    pdf.cell(95, 6, "Epson Proofs", border=1)
-    pdf.cell(35, 6, f"R {EPSON_PROOF_UNIT_COST:,.2f}", border=1, align="R")
-    pdf.cell(25, 6, str(epson_qty), border=1, align="R")
-    pdf.cell(35, 6, f"R {epson_subtotal:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
-
-    extra_items = [
-        ("Colour Matching", data.get("cm_net_val", 0.0), data.get("cm_quantity", 0)),
-        ("Layflat", data.get("lf_net_val", 0.0), data.get("lf_quantity", 0)),
-        ("Additional Setup / Tooling", data.get("pt_net_val", 0.0), data.get("pt_quantity", 0)),
-    ]
-
-    for item_desc, net_val, qty in extra_items:
-        pdf.set_x(pdf.l_margin)
-        subtotal = net_val * qty
-        pdf.cell(95, 6, item_desc, border=1)
-        pdf.cell(35, 6, f"R {net_val:,.2f}", border=1, align="R")
-        pdf.cell(25, 6, str(qty), border=1, align="R")
-        pdf.cell(35, 6, f"R {subtotal:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+    for item in data["Line Items"]:
+        if item["qty"] > 0 or item["client_subtotal"] > 0:
+            pdf.set_x(pdf.l_margin)
+            pdf.set_font("Helvetica", "", 8)
+            unit_fmt = f"R {item['client_unit_price']:,.4f}" if item["decimals"] == 4 else f"R {item['client_unit_price']:,.2f}"
+            pdf.cell(95, 6, pdf_safe_text(item["description"])[:55], border=1)
+            pdf.cell(35, 6, unit_fmt, border=1, align="R")
+            pdf.cell(25, 6, f"{item['qty']:,}", border=1, align="R")
+            pdf.cell(35, 6, f"R {item['client_subtotal']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
 
     pdf.ln(2)
     pdf.set_x(pdf.l_margin)
     pdf.set_font("Helvetica", "B", 9)
     pdf.cell(155, 6, "Net Subtotal:", border=0, align="R")
-    pdf.cell(35, 6, f"R {data['Net Subtotal']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+    pdf.cell(35, 6, f"R {data['Client Net Subtotal']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
 
     pdf.set_x(pdf.l_margin)
     pdf.cell(155, 6, "15% VAT:", border=0, align="R")
-    pdf.cell(35, 6, f"R {data['VAT (15%)']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+    pdf.cell(35, 6, f"R {data['Client VAT (15%)']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
 
     pdf.set_x(pdf.l_margin)
     pdf.set_fill_color(241, 245, 249)
     pdf.cell(155, 7, "Gross Total:", border=0, align="R")
-    pdf.cell(35, 7, f"R {data['Gross Total']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
+    pdf.cell(35, 7, f"R {data['Client Gross Total']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
+
+    return bytes(pdf.output())
+
+
+def generate_renflex_order_pdf(data: dict) -> bytes:
+    """Generates a Supplier Purchase Order PDF for Ren-Flex Packaging at base supplier cost."""
+    if not HAS_FPDF:
+        return b"PDF Generation requires 'fpdf2' package."
+
+    class PDF(FPDF):
+        def header(self):
+            self.set_font("Helvetica", "B", 16)
+            self.set_text_color(15, 23, 42)
+            self.cell(0, 10, "PURCHASE ORDER - IN-MOULD LABELS (DIGITAL TRIAL)", border=False, new_x="LMARGIN", new_y="NEXT", align="L")
+            self.set_font("Helvetica", "", 9)
+            self.set_text_color(71, 85, 105)
+            self.cell(0, 5, f"Order Date: {datetime.now().strftime('%d %B %Y')} | PO No: {pdf_safe_text(data['PO Number'])} | Ren-Flex Quote Ref: {data['Quote Ref']}", border=False, new_x="LMARGIN", new_y="NEXT", align="L")
+            self.ln(4)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font("Helvetica", "I", 8)
+            self.set_text_color(148, 163, 184)
+            self.cell(0, 10, f"Page {self.page_no()} | Purchase Order to REN-MEDIA CC t/a REN-FLEX", align="C")
+
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    def section_heading(title):
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("Helvetica", "B", 10.5)
+        pdf.set_fill_color(226, 232, 240)
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 7, f"  {pdf_safe_text(title)}", border=False, new_x="LMARGIN", new_y="NEXT", fill=True)
+        pdf.ln(2)
+
+    def key_value(key, value):
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_text_color(71, 85, 105)
+        pdf.cell(60, 5.5, pdf_safe_text(key), border=False)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(15, 23, 42)
+        remaining_width = pdf.w - pdf.r_margin - pdf.get_x()
+        pdf.multi_cell(remaining_width, 5.5, pdf_safe_text(value), border=False)
+
+    # 1. Supplier & Order Metadata
+    section_heading("1. Supplier & Order Details")
+    key_value("Supplier:", f"{RENFLEX_SUPPLIER_DETAILS['name']} (Reg: {RENFLEX_SUPPLIER_DETAILS['reg_no']})")
+    key_value("Supplier VAT No:", RENFLEX_SUPPLIER_DETAILS["vat_no"])
+    key_value("Attention / Rep:", RENFLEX_SUPPLIER_DETAILS["rep"])
+    key_value("Ren-Flex Quote Ref:", data["Quote Ref"])
+    key_value("Purchase Order No:", data["PO Number"])
+    if data.get("Client Name"):
+        key_value("End Customer / Ref:", data["Client Name"])
+    if data.get("Delivery Address"):
+        key_value("Delivery Instructions:", data["Delivery Address"])
+    if data.get("Order Notes"):
+        key_value("Artwork / Order Notes:", data["Order Notes"])
+    pdf.ln(3)
+
+    # 2. Dieline & Variant Split Instructions
+    section_heading("2. Dieline & Variant Print Breakdown")
+    key_value("Dieline / Tooling:", data["Selected Dieline"])
+    key_value("Label Dimensions:", data["Dieline Size"])
+    key_value("Total Order MOQ:", f"{data['Total Quantity']:,} labels across {data['No of Variants']} variant(s)")
+    pdf.ln(2)
+
+    pdf.set_x(pdf.l_margin)
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_fill_color(241, 245, 249)
+    pdf.cell(125, 6, "Variant / Artwork Description", border=1, fill=True)
+    pdf.cell(35, 6, "Order Qty", border=1, align="R", fill=True)
+    pdf.cell(30, 6, "Share", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
+
+    pdf.set_font("Helvetica", "", 8)
+    for v in data["Variant Details"]:
+        pdf.set_x(pdf.l_margin)
+        v_name = pdf_safe_text(v["variant"]) if v["variant"] else "Unnamed Label Design"
+        pct = (v["quantity"] / data["Total Quantity"] * 100) if data["Total Quantity"] > 0 else 0
+        pdf.cell(125, 6, v_name[:75], border=1)
+        pdf.cell(35, 6, f"{v['quantity']:,}", border=1, align="R")
+        pdf.cell(30, 6, f"{pct:.1f}%", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+    pdf.ln(3)
+
+    # 3. Technical & Print Specifications
+    section_heading("3. Technical, Substrate & Proofing Specifications")
+    key_value("Substrate Colour:", data["Substrate Colour"])
+    key_value("Substrate Finish:", data["Substrate Type"])
+    key_value("Material & Finishing:", data["Material Specs"])
+    key_value("Colour Matching:", ", ".join(data["Colour Matching"]) if data["Colour Matching"] else "Standard CMYK")
+    if "Pantone" in data["Colour Matching"]:
+        key_value("Pantone Details:", f"{data['Pantone Qty']} label(s) - {data['Pantone Refs']}")
+    if "Match to target supplied" in data["Colour Matching"]:
+        key_value("Target Match Details:", f"{data['Target Qty']} label(s) - {data['Target Refs']}")
+    key_value("Print Method:", f"Digital: {data['Digital Print']} | Litho: {data['Litho Print']}")
+    key_value("Epson Proofs Required:", f"{data['Epson Proof Qty']} proof(s)")
+    key_value("Layflat Supplied:", data["Layflat Supplied"])
+    pdf.ln(3)
+
+    # 4. Agreed Supplier Cost Summary (Unmarked Base Prices)
+    section_heading("4. Order Value Summary (Excl. Client Markup)")
+    pdf.set_x(pdf.l_margin)
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_fill_color(241, 245, 249)
+    pdf.cell(95, 6, "Item Description", border=1, fill=True)
+    pdf.cell(35, 6, "Unit Price", border=1, align="R", fill=True)
+    pdf.cell(25, 6, "Qty", border=1, align="R", fill=True)
+    pdf.cell(35, 6, "Sub Total", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
+
+    for item in data["Line Items"]:
+        if item["qty"] > 0 or item["base_subtotal"] > 0:
+            pdf.set_x(pdf.l_margin)
+            pdf.set_font("Helvetica", "", 8)
+            unit_fmt = f"R {item['base_unit_price']:,.4f}" if item["decimals"] == 4 else f"R {item['base_unit_price']:,.2f}"
+            pdf.cell(95, 6, pdf_safe_text(item["description"])[:55], border=1)
+            pdf.cell(35, 6, unit_fmt, border=1, align="R")
+            pdf.cell(25, 6, f"{item['qty']:,}", border=1, align="R")
+            pdf.cell(35, 6, f"R {item['base_subtotal']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+
+    pdf.ln(2)
+    pdf.set_x(pdf.l_margin)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(155, 6, "Net Order Subtotal:", border=0, align="R")
+    pdf.cell(35, 6, f"R {data['Base Net Subtotal']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+
+    pdf.set_x(pdf.l_margin)
+    pdf.cell(155, 6, "15% VAT:", border=0, align="R")
+    pdf.cell(35, 6, f"R {data['Base VAT (15%)']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+
+    pdf.set_x(pdf.l_margin)
+    pdf.set_fill_color(226, 232, 240)
+    pdf.cell(155, 7, "Total Order Value (Incl. VAT):", border=0, align="R")
+    pdf.cell(35, 7, f"R {data['Base Gross Total']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
     return bytes(pdf.output())
 
@@ -376,15 +496,32 @@ def on_substrate_colour_change():
         st.session_state["material_specs"] = WHITE_MATERIAL_SPECS
 
 
+def apply_bulk_markup():
+    """Applies a bulk markup percentage to whichever cost items are checked."""
+    pct = float(st.session_state.get("bulk_markup_pct", 0.0))
+    if st.session_state.get("bulk_apply_trial", False):
+        st.session_state["trial_markup_pct"] = pct
+    if st.session_state.get("bulk_apply_epson", False):
+        st.session_state["epson_markup_pct"] = pct
+    if st.session_state.get("bulk_apply_cm", False):
+        st.session_state["cm_markup_pct"] = pct
+    if st.session_state.get("bulk_apply_lf", False):
+        st.session_state["lf_markup_pct"] = pct
+    if st.session_state.get("bulk_apply_pt", False):
+        st.session_state["pt_markup_pct"] = pct
+
+
 def reset_all_form_fields():
     """Purges session state to reset all fields cleanly."""
     prefixes = ("v_name_", "v_qty_")
     known_keys = {
-        "selected_dieline", "num_variants", "substrate_colour", "substrate_type",
-        "material_specs", "colour_match_type", "qty_pantone_match", "pantone_refs",
-        "qty_target_match", "target_refs", "litho_print", "digital_print",
-        "epson_proof_qty", "layflat_supplied", "cm_net", "cm_qty",
-        "lf_net", "lf_qty", "pt_net", "pt_qty"
+        "client_name", "selected_dieline", "num_variants", "substrate_colour",
+        "substrate_type", "material_specs", "colour_match_type", "qty_pantone_match",
+        "pantone_refs", "qty_target_match", "target_refs", "litho_print",
+        "digital_print", "epson_proof_qty", "layflat_supplied", "cm_net", "cm_qty",
+        "lf_net", "lf_qty", "pt_net", "pt_qty", "trial_markup_pct", "epson_markup_pct",
+        "cm_markup_pct", "lf_markup_pct", "pt_markup_pct", "bulk_markup_pct",
+        "po_number", "delivery_address", "order_notes"
     }
     for key in list(st.session_state.keys()):
         if key in known_keys or key.startswith(prefixes):
@@ -396,10 +533,10 @@ def reset_all_form_fields():
 # -----------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="IML Digital Trial Quotation Form", page_icon="🏷️", layout="wide"
+    page_title="IML Digital Trial Quotation & Order Form", page_icon="🏷️", layout="wide"
 )
 
-# Initialize defaults before rendering so substrate selection immediately drives pricing & specs
+# Initialize defaults before rendering
 if "selected_dieline" not in st.session_state:
     st.session_state["selected_dieline"] = DIELINE_OPTIONS[0]
 if "num_variants" not in st.session_state:
@@ -411,13 +548,12 @@ if "material_specs" not in st.session_state:
 
 current_substrate = st.session_state["substrate_colour"]
 
-st.title("🏷️ In-Mould Label (IML) Digital Trial Quotation")
+st.title("🏷️ In-Mould Label (IML) Digital Trial Quotation & Order Builder")
 st.markdown(
-    "Select **one Dieline / Jar Size** below and split its **MOQ** across one or more label designs/variants. "
-    "Selecting **Clear** substrate applies a **+5% markup** to all dieline unit prices."
+    "Configure your **Dieline & Variant Split**, apply optional **Client Markup %** on selected line items before exporting the **Client PDF Quote**, or **Convert directly to a Purchase Order for Ren-Flex**."
 )
 
-# Master Reference Table (Reflects active White vs Clear pricing dynamically)
+# Master Reference Table
 with st.expander(f"📋 View Ren-Flex Digital Trial MOQ & Pricing Schedule ({current_substrate} Substrate)", expanded=False):
     ref_df = pd.DataFrame([
         {
@@ -428,15 +564,23 @@ with st.expander(f"📋 View Ren-Flex Digital Trial MOQ & Pricing Schedule ({cur
             "Trial MOQ (Total Run)": f"{v['moq']:,}",
             "White Unit Price": f"R {v['base_unit_price']:.4f}",
             "Clear Unit Price (+5%)": f"R {get_effective_unit_price(v['base_unit_price'], 'Clear'):.4f}",
-            f"Active Trial Run Charge ({current_substrate})": f"R {v['moq'] * get_effective_unit_price(v['base_unit_price'], current_substrate):,.2f}",
+            f"Supplier Run Cost ({current_substrate})": f"R {v['moq'] * get_effective_unit_price(v['base_unit_price'], current_substrate):,.2f}",
         }
         for v in DIELINE_SPECS.values()
     ])
     st.dataframe(ref_df, use_container_width=True, hide_index=True)
 
-# Top Refresh Button
-_, top_btn_col = st.columns([4, 1])
-with top_btn_col:
+# Top Client Info & Refresh Bar
+top_bar1, top_bar2 = st.columns([3.5, 1])
+with top_bar1:
+    client_name = st.text_input(
+        "Client / Customer Name (for Client Quotation PDF)",
+        key="client_name",
+        placeholder="e.g., Bowler Plastics / End Brand Name",
+    )
+with top_bar2:
+    st.write("")
+    st.write("")
     st.button("🔄 Refresh / Clear Form", on_click=reset_all_form_fields, use_container_width=True)
 
 st.divider()
@@ -455,7 +599,7 @@ with top_c1:
         on_change=distribute_moq_evenly,
     )
     spec = DIELINE_SPECS[chosen_die]
-    st.caption(f"Quote Ref: **{spec['quote_ref']}** | Label Size: **{spec['size_mm']}**")
+    st.caption(f"Ren-Flex Quote Ref: **{spec['quote_ref']}** | Label Size: **{spec['size_mm']}**")
 
 with top_c2:
     n_vars = st.number_input(
@@ -469,28 +613,27 @@ with top_c2:
 
 required_moq = spec["moq"]
 base_unit_price = spec["base_unit_price"]
-unit_price = get_effective_unit_price(base_unit_price, current_substrate)
-run_charge = required_moq * unit_price
+supplier_unit_price = get_effective_unit_price(base_unit_price, current_substrate)
+supplier_run_charge = required_moq * supplier_unit_price
 
 with top_c3:
     st.metric("Required MOQ (Total Qty)", f"{required_moq:,}")
 
 with top_c4:
     price_note = (
-        f"@ R {unit_price:.4f} / label (+5% Clear)"
+        f"@ R {supplier_unit_price:.4f} / label (+5% Clear)"
         if current_substrate == "Clear"
-        else f"@ R {unit_price:.4f} / label (White)"
+        else f"@ R {supplier_unit_price:.4f} / label (White)"
     )
     st.metric(
-        "Digital Trial Run Charge",
-        f"R {run_charge:,.2f}",
+        "Ren-Flex Base Run Cost",
+        f"R {supplier_run_charge:,.2f}",
         delta=price_note,
         delta_color="normal" if current_substrate == "Clear" else "off"
     )
 
 st.subheader("Allocate MOQ Across Label Designs / Variants")
 
-# Initialize variant quantities if missing
 if "v_qty_0" not in st.session_state:
     distribute_moq_evenly()
 
@@ -527,7 +670,6 @@ for v in range(int(n_vars)):
         "quantity": v_qty,
     })
 
-# MOQ Validation & Auto-Balance Bar
 diff = required_moq - allocated_sum
 is_moq_valid = (diff == 0)
 
@@ -628,7 +770,7 @@ with col_c2:
     )
 
     epson_proof_qty = st.number_input(
-        f"Epson Proof (Qty @ R {EPSON_PROOF_UNIT_COST:,.2f} each)",
+        f"Epson Proof (Qty @ R {EPSON_PROOF_UNIT_COST:,.2f} base cost each)",
         min_value=0,
         step=1,
         value=1,
@@ -644,86 +786,209 @@ with col_c2:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 4. FINANCIAL QUOTATION SUMMARY
+# 4. FINANCIAL QUOTATION SUMMARY & SELECTIVE CLIENT MARKUP
 # -----------------------------------------------------------------------------
-st.header("4. Financial Quotation Summary")
-st.caption("Digital Trial Run and Epson Proofs calculate automatically. Add optional pre-press charges below:")
-
-col_desc, col_val, col_qty, col_sub = st.columns([3.5, 2, 1.5, 2])
-col_desc.write("**Task Description**")
-col_val.write("**Unit Price**")
-col_qty.write("**Qty**")
-col_sub.write("**Sub Total**")
-
-# Auto-populated Digital Trial Run (Single Charge)
-r_desc, r_val, r_qty, r_sub = st.columns([3.5, 2, 1.5, 2])
-substrate_label = "IML Clear +5%" if substrate_colour == "Clear" else "IML White Gloss"
-r_desc.write(f"Digital Trial Run: **{spec['die_code']} — {spec['jar_name']}** ({substrate_label}, {int(n_vars)} variant(s))")
-r_val.write(f"R {unit_price:.4f}")
-r_qty.write(f"{required_moq:,}")
-r_sub.markdown(f"**R {run_charge:,.2f}**")
-
-# Auto-populated Epson Proofs (R 650.00 per proof)
-ep_desc, ep_val, ep_qty, ep_sub = st.columns([3.5, 2, 1.5, 2])
-ep_desc.write("Epson Proofs")
-ep_val.write(f"R {EPSON_PROOF_UNIT_COST:,.2f}")
-ep_qty.write(f"{int(epson_proof_qty)}")
-epson_subtotal = int(epson_proof_qty) * EPSON_PROOF_UNIT_COST
-ep_sub.markdown(f"**R {epson_subtotal:,.2f}**")
-
-# Optional Extra Charges
-c_desc, c_val, c_qty, c_sub = st.columns([3.5, 2, 1.5, 2])
-c_desc.write("Colour Matching")
-cm_net_val = c_val.number_input("CM Net Value", min_value=0.0, value=0.0, step=10.0, key="cm_net", label_visibility="collapsed")
-cm_quantity = c_qty.number_input("CM Quantity", min_value=0, value=0, step=1, key="cm_qty", label_visibility="collapsed")
-cm_subtotal = cm_net_val * cm_quantity
-c_sub.markdown(f"**R {cm_subtotal:,.2f}**")
-
-l_desc, l_val, l_qty, l_sub = st.columns([3.5, 2, 1.5, 2])
-l_desc.write("Layflat")
-lf_net_val = l_val.number_input("LF Net Value", min_value=0.0, value=0.0, step=10.0, key="lf_net", label_visibility="collapsed")
-lf_quantity = l_qty.number_input("LF Quantity", min_value=0, value=0, step=1, key="lf_qty", label_visibility="collapsed")
-lf_subtotal = lf_net_val * lf_quantity
-l_sub.markdown(f"**R {lf_subtotal:,.2f}**")
-
-p_desc, p_val, p_qty, p_sub = st.columns([3.5, 2, 1.5, 2])
-p_desc.write("Additional Setup / Tooling")
-pt_net_val = p_val.number_input("PT Net Value", min_value=0.0, value=0.0, step=10.0, key="pt_net", label_visibility="collapsed")
-pt_quantity = p_qty.number_input("PT Quantity", min_value=0, value=0, step=1, key="pt_qty", label_visibility="collapsed")
-pt_subtotal = pt_net_val * pt_quantity
-p_sub.markdown(f"**R {pt_subtotal:,.2f}**")
-
-st.divider()
-
-# Live Totals Calculation
-net_subtotal = run_charge + epson_subtotal + cm_subtotal + lf_subtotal + pt_subtotal
-vat_amount = net_subtotal * 0.15
-gross_total = net_subtotal + vat_amount
-
-tot_col1, tot_col2 = st.columns([6, 3])
-with tot_col2:
-    st.write(f"**Net Subtotal:** R {net_subtotal:,.2f}")
-    st.write(f"**15% VAT:** R {vat_amount:,.2f}")
-    st.subheader(f"Gross Total: R {gross_total:,.2f}")
-
-st.divider()
-
-# SUBMIT BUTTON (Disabled until variant quantities equal the MOQ)
-submit_button = st.button(
-    "Submit Digital Trial Quotation & Generate PDF",
-    type="primary",
-    use_container_width=True,
-    disabled=not is_moq_valid,
+st.header("4. Financial Summary & Client Markup")
+st.caption(
+    "Enter base supplier costs and optionally apply a **Markup %** on specific items for the **Client PDF Quote**. "
+    "Converting to a **Ren-Flex Order** uses the unmarked supplier base costs."
 )
 
-if not is_moq_valid:
-    st.warning("⚠️ Please ensure the sum of variant quantities equals the Dieline MOQ before submitting.")
+# Optional Quick Bulk Markup Helper
+with st.expander("⚡ Quick-Apply Markup % to Selected Items", expanded=False):
+    bm1, bm2, bm3 = st.columns([1.5, 3, 1.5])
+    with bm1:
+        st.number_input("Markup % to Apply", min_value=0.0, max_value=500.0, value=15.0, step=1.0, key="bulk_markup_pct")
+    with bm2:
+        st.write("**Select items to mark up:**")
+        chk1, chk2, chk3, chk4, chk5 = st.columns(5)
+        chk1.checkbox("Trial Run", value=True, key="bulk_apply_trial")
+        chk2.checkbox("Epson", value=False, key="bulk_apply_epson")
+        chk3.checkbox("Colour", value=False, key="bulk_apply_cm")
+        chk4.checkbox("Layflat", value=False, key="bulk_apply_lf")
+        chk5.checkbox("Setup", value=False, key="bulk_apply_pt")
+    with bm3:
+        st.write("")
+        st.button("Apply Markup %", on_click=apply_bulk_markup, use_container_width=True)
+
+# Table Headers
+h_desc, h_base, h_qty, h_basesub, h_mkp, h_clientsub = st.columns([2.8, 1.3, 1.0, 1.4, 1.2, 1.5])
+h_desc.write("**Task Description**")
+h_base.write("**Base Unit Cost**")
+h_qty.write("**Qty**")
+h_basesub.write("**Base Sub Total**")
+h_mkp.write("**Markup %**")
+h_clientsub.write("**Client Sub Total**")
+
+# --- Row 1: Digital Trial Run ---
+r1, r2, r3, r4, r5, r6 = st.columns([2.8, 1.3, 1.0, 1.4, 1.2, 1.5])
+substrate_label = "IML Clear +5%" if substrate_colour == "Clear" else "IML White Gloss"
+trial_desc = f"Digital Trial Run: {spec['die_code']} - {spec['jar_name']} ({substrate_label}, {int(n_vars)} variant(s))"
+r1.write(f"**{trial_desc}**")
+r2.write(f"R {supplier_unit_price:.4f}")
+r3.write(f"{required_moq:,}")
+r4.write(f"R {supplier_run_charge:,.2f}")
+trial_markup = r5.number_input("Trial Markup %", min_value=0.0, max_value=500.0, value=0.0, step=1.0, key="trial_markup_pct", label_visibility="collapsed")
+trial_client_unit = round(supplier_unit_price * (1 + trial_markup / 100.0), 4)
+trial_client_sub = required_moq * trial_client_unit
+r6.markdown(f"**R {trial_client_sub:,.2f}**")
+
+# --- Row 2: Epson Proofs ---
+e1, e2, e3, e4, e5, e6 = st.columns([2.8, 1.3, 1.0, 1.4, 1.2, 1.5])
+e1.write("Epson Proofs")
+e2.write(f"R {EPSON_PROOF_UNIT_COST:,.2f}")
+e3.write(f"{int(epson_proof_qty)}")
+epson_base_sub = int(epson_proof_qty) * EPSON_PROOF_UNIT_COST
+e4.write(f"R {epson_base_sub:,.2f}")
+epson_markup = e5.number_input("Epson Markup %", min_value=0.0, max_value=500.0, value=0.0, step=1.0, key="epson_markup_pct", label_visibility="collapsed")
+epson_client_unit = round(EPSON_PROOF_UNIT_COST * (1 + epson_markup / 100.0), 2)
+epson_client_sub = int(epson_proof_qty) * epson_client_unit
+e6.markdown(f"**R {epson_client_sub:,.2f}**")
+
+# --- Row 3: Colour Matching ---
+c1, c2, c3, c4, c5, c6 = st.columns([2.8, 1.3, 1.0, 1.4, 1.2, 1.5])
+c1.write("Colour Matching")
+cm_net_val = c2.number_input("CM Base Unit", min_value=0.0, value=0.0, step=10.0, key="cm_net", label_visibility="collapsed")
+cm_quantity = c3.number_input("CM Qty", min_value=0, value=0, step=1, key="cm_qty", label_visibility="collapsed")
+cm_base_sub = cm_net_val * cm_quantity
+c4.write(f"R {cm_base_sub:,.2f}")
+cm_markup = c5.number_input("CM Markup %", min_value=0.0, max_value=500.0, value=0.0, step=1.0, key="cm_markup_pct", label_visibility="collapsed")
+cm_client_unit = round(cm_net_val * (1 + cm_markup / 100.0), 2)
+cm_client_sub = cm_quantity * cm_client_unit
+c6.markdown(f"**R {cm_client_sub:,.2f}**")
+
+# --- Row 4: Layflat ---
+l1, l2, l3, l4, l5, l6 = st.columns([2.8, 1.3, 1.0, 1.4, 1.2, 1.5])
+l1.write("Layflat")
+lf_net_val = l2.number_input("LF Base Unit", min_value=0.0, value=0.0, step=10.0, key="lf_net", label_visibility="collapsed")
+lf_quantity = l3.number_input("LF Qty", min_value=0, value=0, step=1, key="lf_qty", label_visibility="collapsed")
+lf_base_sub = lf_net_val * lf_quantity
+l4.write(f"R {lf_base_sub:,.2f}")
+lf_markup = l5.number_input("LF Markup %", min_value=0.0, max_value=500.0, value=0.0, step=1.0, key="lf_markup_pct", label_visibility="collapsed")
+lf_client_unit = round(lf_net_val * (1 + lf_markup / 100.0), 2)
+lf_client_sub = lf_quantity * lf_client_unit
+l6.markdown(f"**R {lf_client_sub:,.2f}**")
+
+# --- Row 5: Additional Setup / Tooling ---
+p1, p2, p3, p4, p5, p6 = st.columns([2.8, 1.3, 1.0, 1.4, 1.2, 1.5])
+p1.write("Additional Setup / Tooling")
+pt_net_val = p2.number_input("PT Base Unit", min_value=0.0, value=0.0, step=10.0, key="pt_net", label_visibility="collapsed")
+pt_quantity = p3.number_input("PT Qty", min_value=0, value=0, step=1, key="pt_qty", label_visibility="collapsed")
+pt_base_sub = pt_net_val * pt_quantity
+p4.write(f"R {pt_base_sub:,.2f}")
+pt_markup = p5.number_input("PT Markup %", min_value=0.0, max_value=500.0, value=0.0, step=1.0, key="pt_markup_pct", label_visibility="collapsed")
+pt_client_unit = round(pt_net_val * (1 + pt_markup / 100.0), 2)
+pt_client_sub = pt_quantity * pt_client_unit
+p6.markdown(f"**R {pt_client_sub:,.2f}**")
+
+st.divider()
+
+# Totals Comparison (Base Supplier Cost vs. Client Marked-Up Quote)
+base_net_subtotal = supplier_run_charge + epson_base_sub + cm_base_sub + lf_base_sub + pt_base_sub
+base_vat_amount = base_net_subtotal * 0.15
+base_gross_total = base_net_subtotal + base_vat_amount
+
+client_net_subtotal = trial_client_sub + epson_client_sub + cm_client_sub + lf_client_sub + pt_client_sub
+client_vat_amount = client_net_subtotal * 0.15
+client_gross_total = client_net_subtotal + client_vat_amount
+total_margin_zar = client_net_subtotal - base_net_subtotal
+
+tot_col1, tot_col2, tot_col3 = st.columns([3, 3, 3])
+with tot_col1:
+    st.markdown("#### 🏭 Ren-Flex Supplier Cost")
+    st.write(f"**Base Net Subtotal:** R {base_net_subtotal:,.2f}")
+    st.write(f"**15% VAT:** R {base_vat_amount:,.2f}")
+    st.write(f"**Supplier Gross Total:** R {base_gross_total:,.2f}")
+
+with tot_col2:
+    st.markdown("#### 📈 Applied Markup Margin")
+    margin_pct_overall = (total_margin_zar / base_net_subtotal * 100) if base_net_subtotal > 0 else 0.0
+    st.metric(
+        "Total Net Markup",
+        f"R {total_margin_zar:,.2f}",
+        delta=f"{margin_pct_overall:.2f}% effective net margin",
+        delta_color="normal" if total_margin_zar > 0 else "off"
+    )
+
+with tot_col3:
+    st.markdown("#### 🧾 Client Quotation Total")
+    st.write(f"**Client Net Subtotal:** R {client_net_subtotal:,.2f}")
+    st.write(f"**15% VAT:** R {client_vat_amount:,.2f}")
+    st.subheader(f"Gross Total: R {client_gross_total:,.2f}")
+
+st.divider()
 
 # -----------------------------------------------------------------------------
-# POST-SUBMISSION ACTIONS
+# 5. ACTIONS: SAVE CLIENT QUOTE PDF OR CONVERT TO REN-FLEX ORDER
 # -----------------------------------------------------------------------------
-if submit_button and is_moq_valid:
-    quote_data = {
+st.header("5. Generate Client Quotation or Convert to Ren-Flex Order")
+
+if not is_moq_valid:
+    st.warning("⚠️ Please ensure the sum of variant quantities equals the Dieline MOQ before generating a quote or order.")
+
+action_col1, action_col2 = st.columns(2)
+
+# Build shared line items structure
+line_items_payload = [
+    {
+        "description": trial_desc,
+        "base_unit_price": supplier_unit_price,
+        "client_unit_price": trial_client_unit,
+        "qty": required_moq,
+        "base_subtotal": supplier_run_charge,
+        "markup_pct": trial_markup,
+        "client_subtotal": trial_client_sub,
+        "decimals": 4,
+    },
+    {
+        "description": "Epson Proofs",
+        "base_unit_price": EPSON_PROOF_UNIT_COST,
+        "client_unit_price": epson_client_unit,
+        "qty": int(epson_proof_qty),
+        "base_subtotal": epson_base_sub,
+        "markup_pct": epson_markup,
+        "client_subtotal": epson_client_sub,
+        "decimals": 2,
+    },
+    {
+        "description": "Colour Matching",
+        "base_unit_price": cm_net_val,
+        "client_unit_price": cm_client_unit,
+        "qty": int(cm_quantity),
+        "base_subtotal": cm_base_sub,
+        "markup_pct": cm_markup,
+        "client_subtotal": cm_client_sub,
+        "decimals": 2,
+    },
+    {
+        "description": "Layflat",
+        "base_unit_price": lf_net_val,
+        "client_unit_price": lf_client_unit,
+        "qty": int(lf_quantity),
+        "base_subtotal": lf_base_sub,
+        "markup_pct": lf_markup,
+        "client_subtotal": lf_client_sub,
+        "decimals": 2,
+    },
+    {
+        "description": "Additional Setup / Tooling",
+        "base_unit_price": pt_net_val,
+        "client_unit_price": pt_client_unit,
+        "qty": int(pt_quantity),
+        "base_subtotal": pt_base_sub,
+        "markup_pct": pt_markup,
+        "client_subtotal": pt_client_sub,
+        "decimals": 2,
+    },
+]
+
+def build_payload(doc_type: str, po_number: str = "", delivery_addr: str = "", order_notes: str = "") -> dict:
+    return {
+        "Document Type": doc_type,
+        "Client Name": client_name,
+        "PO Number": po_number,
+        "Delivery Address": delivery_addr,
+        "Order Notes": order_notes,
         "Selected Dieline": chosen_die,
         "Quote Ref": spec["quote_ref"],
         "Die Code": spec["die_code"],
@@ -732,9 +997,6 @@ if submit_button and is_moq_valid:
         "Total Quantity": required_moq,
         "No of Variants": int(n_vars),
         "Variant Details": variant_details,
-        "Base Unit Price": base_unit_price,
-        "Unit Price": unit_price,
-        "Trial Run Charge": run_charge,
         "Substrate Colour": substrate_colour,
         "Substrate Type": substrate_type,
         "Material Specs": material_specs,
@@ -746,40 +1008,93 @@ if submit_button and is_moq_valid:
         "Litho Print": litho_print,
         "Digital Print": digital_print,
         "Epson Proof Qty": int(epson_proof_qty),
-        "Epson Proof Subtotal": epson_subtotal,
         "Layflat Supplied": layflat_supplied,
-        "cm_net_val": cm_net_val,
-        "cm_quantity": cm_quantity,
-        "lf_net_val": lf_net_val,
-        "lf_quantity": lf_quantity,
-        "pt_net_val": pt_net_val,
-        "pt_quantity": pt_quantity,
-        "Net Subtotal": net_subtotal,
-        "VAT (15%)": vat_amount,
-        "Gross Total": gross_total,
+        "Line Items": line_items_payload,
+        "Base Net Subtotal": base_net_subtotal,
+        "Base VAT (15%)": base_vat_amount,
+        "Base Gross Total": base_gross_total,
+        "Client Net Subtotal": client_net_subtotal,
+        "Client VAT (15%)": client_vat_amount,
+        "Client Gross Total": client_gross_total,
     }
 
-    st.success("🎉 Digital Trial Quotation processed successfully!")
+# --- LEFT COLUMN: CLIENT QUOTATION WORKFLOW ---
+with action_col1:
+    with st.container(border=True):
+        st.subheader("📄 Option A: Save & Export Client Quotation")
+        st.write("Generates the client-facing PDF quotation using your **Marked-Up Client Prices** and logs it to Google Sheets.")
+        st.write("")
+        save_client_quote_btn = st.button(
+            "Save Quotation & Generate Client PDF",
+            type="primary",
+            use_container_width=True,
+            disabled=not is_moq_valid,
+        )
 
-    # 1. Update Google Spreadsheet
-    with st.spinner("Recording request in Google Spreadsheet..."):
-        sheet_updated = append_to_google_sheets(quote_data)
-        if sheet_updated:
-            st.info("✅ Data appended to Google Sheet database.")
+        if save_client_quote_btn and is_moq_valid:
+            payload = build_payload("Client Quotation")
+            with st.spinner("Saving quotation and generating Client PDF..."):
+                sheet_ok = append_to_google_sheets(payload)
+                if sheet_ok:
+                    st.info("✅ Client quotation recorded in Google Sheets.")
+                pdf_bytes = generate_client_pdf_quote(payload)
+                if pdf_bytes and HAS_FPDF:
+                    st.success("🎉 Client Quotation PDF is ready!")
+                    st.download_button(
+                        label="📥 Download Client Quotation PDF",
+                        data=pdf_bytes,
+                        file_name=f"Client_IML_Quote_{spec['die_code'].replace(' ', '')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                    )
 
-    # 2. Generate PDF Document & Display Download Button
-    with st.spinner("Generating client PDF quotation document..."):
-        pdf_bytes = generate_pdf_quote(quote_data)
-        
-        if pdf_bytes and HAS_FPDF:
-            filename = f"IML_Digital_Trial_Quote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-            
-            st.download_button(
-                label="📥 Download Quotation PDF",
-                data=pdf_bytes,
-                file_name=filename,
-                mime="application/pdf",
-                use_container_width=True
-            )
-        elif not HAS_FPDF:
-            st.warning("`fpdf2` is not installed. Install it using `pip install fpdf2` to enable PDF downloads.")
+# --- RIGHT COLUMN: CONVERT TO REN-FLEX ORDER WORKFLOW ---
+with action_col2:
+    with st.container(border=True):
+        st.subheader("🏭 Option B: Convert to Order for Ren-Flex")
+        st.write("Converts this quote into a **Purchase Order for Ren-Flex Packaging** using base supplier costs.")
+        po_number = st.text_input(
+            "Purchase Order (PO) Number",
+            value=f"PO-IML-{datetime.now().strftime('%Y%m%d-%H%M')}",
+            key="po_number",
+        )
+        delivery_address = st.text_input(
+            "Delivery Address / Dispatch Instruction",
+            value="Delivered to 1 Address (Standard)",
+            key="delivery_address",
+        )
+        order_notes = st.text_input(
+            "Artwork / Production Instructions for Ren-Flex",
+            placeholder="e.g., Print-ready PDFs attached via email; confirm Epson proof dispatch",
+            key="order_notes",
+        )
+        convert_order_btn = st.button(
+            "Convert to Order for Ren-Flex & Generate PO PDF",
+            use_container_width=True,
+            disabled=not is_moq_valid,
+        )
+
+        if convert_order_btn and is_moq_valid:
+            if not po_number.strip():
+                st.error("Please enter a Purchase Order (PO) Number before converting to an order.")
+            else:
+                order_payload = build_payload(
+                    "Ren-Flex Order",
+                    po_number=po_number.strip(),
+                    delivery_addr=delivery_address.strip(),
+                    order_notes=order_notes.strip(),
+                )
+                with st.spinner("Converting to Ren-Flex Purchase Order..."):
+                    sheet_ok = append_to_google_sheets(order_payload)
+                    if sheet_ok:
+                        st.info(f"✅ Order ({po_number}) logged in Google Sheets.")
+                    po_pdf_bytes = generate_renflex_order_pdf(order_payload)
+                    if po_pdf_bytes and HAS_FPDF:
+                        st.success(f"🎉 Ren-Flex Purchase Order ({po_number}) is ready!")
+                        st.download_button(
+                            label="📥 Download Ren-Flex Purchase Order PDF",
+                            data=po_pdf_bytes,
+                            file_name=f"RenFlex_Order_{po_number.replace(' ', '_')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                        )
