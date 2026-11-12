@@ -144,21 +144,17 @@ def append_to_google_sheets(data: dict):
         if not existing_row1:
             sheet.append_row(headers)
 
-        flat_variants = [
-            f"[{run['dieline']}] {v['variant']}: {v['quantity']}"
-            for run in data["Dieline Runs"]
-            for v in run["variants"]
-        ]
+        variant_list = [f"{v['variant']}: {v['quantity']}" for v in data["Variant Details"]]
 
         row = [
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             data["Total Quantity"],
-            data["Total Variants"],
-            str(flat_variants),
+            data["No of Variants"],
+            str(variant_list),
             data["Substrate Colour"],
             data["Substrate Type"],
             data["Material Specs"],
-            ", ".join(data["Target Jars"]),
+            data["Selected Dieline"],
             ", ".join(data["Colour Matching"]),
             data["Pantone Qty"],
             data["Pantone Refs"],
@@ -169,7 +165,7 @@ def append_to_google_sheets(data: dict):
             data["Epson Proof Qty"],
             data["Layflat Supplied"],
             "Yes (Digital Trial Quote)",
-            data["Total Variants"],
+            data["No of Variants"],
             "Split across variants to MOQ",
             data["Net Subtotal"],
             data["VAT (15%)"],
@@ -184,7 +180,7 @@ def append_to_google_sheets(data: dict):
 
 
 def generate_pdf_quote(data: dict) -> bytes:
-    """Generates a clean PDF document for the digital trial quotation using FPDF."""
+    """Generates a clean PDF document for the single-dieline digital trial quotation."""
     if not HAS_FPDF:
         return b"PDF Generation requires 'fpdf2' package."
 
@@ -223,34 +219,29 @@ def generate_pdf_quote(data: dict) -> bytes:
         pdf.set_text_color(15, 23, 42)
         pdf.multi_cell(0, 6, str(value), border=False)
 
-    # 1. Digital Trial Runs & Variant Allocation
-    section_heading("1. Digital Trial Dieline Runs & Variant Allocation")
-    key_value("Total Trial Order Qty:", f"{data['Total Quantity']:,} labels")
-    key_value("Total Dieline Runs:", len(data["Dieline Runs"]))
-    key_value("Total Label Designs:", data["Total Variants"])
+    # 1. Dieline & Variant Allocation
+    section_heading("1. Dieline Specification & Variant Breakdown")
+    key_value("Selected Dieline / Jar:", data["Selected Dieline"])
+    key_value("Label Dimensions:", data["Dieline Size"])
+    key_value("Ren-Flex Quote Ref:", data["Quote Ref"])
+    key_value("Total Trial MOQ:", f"{data['Total Quantity']:,} labels")
+    key_value("Number of Variants:", data["No of Variants"])
     pdf.ln(2)
 
-    for idx, run in enumerate(data["Dieline Runs"], start=1):
-        pdf.set_font("Helvetica", "B", 9)
-        pdf.set_fill_color(226, 232, 240)
-        pdf.cell(
-            0, 6,
-            f"Run #{idx}: {run['dieline']} | MOQ: {run['moq']:,} @ R {run['unit_price']:.4f} = R {run['run_charge']:,.2f}",
-            border=1, new_x="LMARGIN", new_y="NEXT", fill=True
-        )
-        pdf.set_font("Helvetica", "B", 8)
-        pdf.cell(125, 5, "Label Design / Variant Description", border=1)
-        pdf.cell(35, 5, "Allocated Qty", border=1, align="R")
-        pdf.cell(30, 5, "% of MOQ", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_fill_color(226, 232, 240)
+    pdf.cell(125, 6, "Label Design / Variant Description", border=1, fill=True)
+    pdf.cell(35, 6, "Allocated Qty", border=1, align="R", fill=True)
+    pdf.cell(30, 6, "% of MOQ", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
-        pdf.set_font("Helvetica", "", 8)
-        for v in run["variants"]:
-            v_name = v["variant"] if v["variant"] else "Unnamed Label Design"
-            pct = (v["quantity"] / run["moq"] * 100) if run["moq"] > 0 else 0
-            pdf.cell(125, 5, v_name[:75], border=1)
-            pdf.cell(35, 5, f"{v['quantity']:,}", border=1, align="R")
-            pdf.cell(30, 5, f"{pct:.1f}%", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
-        pdf.ln(3)
+    pdf.set_font("Helvetica", "", 8)
+    for v in data["Variant Details"]:
+        v_name = v["variant"] if v["variant"] else "Unnamed Label Design"
+        pct = (v["quantity"] / data["Total Quantity"] * 100) if data["Total Quantity"] > 0 else 0
+        pdf.cell(125, 6, v_name[:75], border=1)
+        pdf.cell(35, 6, f"{v['quantity']:,}", border=1, align="R")
+        pdf.cell(30, 6, f"{pct:.1f}%", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+    pdf.ln(4)
 
     # 2. Substrate
     section_heading("2. Substrate Specifications")
@@ -259,19 +250,8 @@ def generate_pdf_quote(data: dict) -> bytes:
     key_value("Material Specs:", data["Material Specs"] if data["Material Specs"] else "Standard Specification")
     pdf.ln(4)
 
-    # 3. Jar Compatibility
-    section_heading("3. Target Jar Specifications")
-    if data["Target Jars"]:
-        for jar in data["Target Jars"]:
-            pdf.set_font("Helvetica", "", 9)
-            pdf.cell(0, 5, f"  - {jar}", border=False, new_x="LMARGIN", new_y="NEXT")
-    else:
-        pdf.set_font("Helvetica", "I", 9)
-        pdf.cell(0, 5, "No specific jar configurations selected.", border=False, new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
-
-    # 4. Print & Colour
-    section_heading("4. Print & Colour Specifications")
+    # 3. Print & Colour
+    section_heading("3. Print & Colour Specifications")
     key_value("Colour Matching Methods:", ", ".join(data["Colour Matching"]) if data["Colour Matching"] else "None specified")
     if "Pantone" in data["Colour Matching"]:
         key_value("Pantone Labels Qty:", data["Pantone Qty"])
@@ -286,23 +266,22 @@ def generate_pdf_quote(data: dict) -> bytes:
     key_value("Layflat Supplied:", data["Layflat Supplied"])
     pdf.ln(4)
 
-    # 5. Financial Summary Table
-    section_heading("5. Financial Summary")
+    # 4. Financial Summary Table
+    section_heading("4. Financial Summary")
     
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(226, 232, 240)
     pdf.cell(95, 6, "Task Description", border=1, fill=True)
-    pdf.cell(35, 6, "Rate / Unit", border=1, align="R", fill=True)
-    pdf.cell(25, 6, "Qty", border=1, align="R", fill=True)
+    pdf.cell(35, 6, "Unit Price", border=1, align="R", fill=True)
+    pdf.cell(25, 6, "MOQ Qty", border=1, align="R", fill=True)
     pdf.cell(35, 6, "Sub Total", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
     pdf.set_font("Helvetica", "", 8)
-    for run in data["Dieline Runs"]:
-        desc = f"Digital Trial Run: {run['die_code']} ({run['jar_name']})"
-        pdf.cell(95, 6, desc[:55], border=1)
-        pdf.cell(35, 6, f"R {run['unit_price']:.4f}", border=1, align="R")
-        pdf.cell(25, 6, f"{run['moq']:,}", border=1, align="R")
-        pdf.cell(35, 6, f"R {run['run_charge']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+    desc = f"Digital Trial Run: {data['Die Code']} ({data['Jar Name']}) - {data['No of Variants']} variant(s)"
+    pdf.cell(95, 6, desc[:55], border=1)
+    pdf.cell(35, 6, f"R {data['Unit Price']:.4f}", border=1, align="R")
+    pdf.cell(25, 6, f"{data['Total Quantity']:,}", border=1, align="R")
+    pdf.cell(35, 6, f"R {data['Trial Run Charge']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
 
     extra_items = [
         ("Colour Matching", data.get("cm_net_val", 0.0), data.get("cm_quantity", 0)),
@@ -336,50 +315,32 @@ def generate_pdf_quote(data: dict) -> bytes:
 # SESSION STATE HELPERS & CALLBACKS
 # -----------------------------------------------------------------------------
 
-def distribute_moq_evenly(run_idx: int):
-    """Distributes the dieline MOQ across the configured number of variants for that run."""
-    die_key = st.session_state.get(f"run_die_{run_idx}", DIELINE_OPTIONS[0])
+def distribute_moq_evenly():
+    """Distributes the selected dieline's MOQ evenly across the configured variants."""
+    die_key = st.session_state.get("selected_dieline", DIELINE_OPTIONS[0])
     moq = DIELINE_SPECS[die_key]["moq"]
-    n_vars = int(st.session_state.get(f"run_n_vars_{run_idx}", 1))
+    n_vars = int(st.session_state.get("num_variants", 1))
 
     base_share = moq // n_vars
     remainder = moq % n_vars
 
-    for v_idx in range(n_vars):
-        st.session_state[f"run_{run_idx}_v_qty_{v_idx}"] = base_share + (1 if v_idx < remainder else 0)
-
-
-def on_dieline_or_variant_count_change(run_idx: int):
-    """Triggered when a dieline changes or the number of variants within that dieline changes."""
-    distribute_moq_evenly(run_idx)
+    for idx in range(n_vars):
+        st.session_state[f"v_qty_{idx}"] = base_share + (1 if idx < remainder else 0)
 
 
 def reset_all_form_fields():
-    """Purges session state to reset the entire quote cleanly."""
-    prefixes = ("run_die_", "run_n_vars_", "run_")
+    """Purges session state to reset all fields cleanly."""
+    prefixes = ("v_name_", "v_qty_")
     known_keys = {
-        "num_dieline_runs", "substrate_colour", "substrate_type", "material_specs",
-        "colour_match_type", "qty_pantone_match", "pantone_refs",
+        "selected_dieline", "num_variants", "substrate_colour", "substrate_type",
+        "material_specs", "colour_match_type", "qty_pantone_match", "pantone_refs",
         "qty_target_match", "target_refs", "litho_print", "digital_print",
         "epson_proof_qty", "layflat_supplied", "cm_net", "cm_qty",
-        "lf_net", "lf_qty", "pt_net", "pt_qty", "preset_die_selector"
+        "lf_net", "lf_qty", "pt_net", "pt_qty"
     }
     for key in list(st.session_state.keys()):
         if key in known_keys or key.startswith(prefixes):
             del st.session_state[key]
-
-
-def load_single_quote_preset():
-    """Loads a selected Ren-Flex digital trial quote as Run #1."""
-    selection = st.session_state.get("preset_die_selector")
-    if not selection or selection == "-- Select a Ren-Flex Trial Quote --":
-        return
-
-    reset_all_form_fields()
-    st.session_state["num_dieline_runs"] = 1
-    st.session_state["run_die_0"] = selection
-    st.session_state["run_n_vars_0"] = 1
-    distribute_moq_evenly(0)
 
 
 # -----------------------------------------------------------------------------
@@ -392,7 +353,7 @@ st.set_page_config(
 
 st.title("🏷️ In-Mould Label (IML) Digital Trial Quotation")
 st.markdown(
-    "Each digital trial quote is charged as **one MOQ press run per dieline size**, which can be split across **multiple label designs/variants** (in equal or custom quantities) as long as the variant quantities sum to the dieline's **MOQ**."
+    "Select **one Dieline / Jar Size** below and split its **MOQ** across one or more label designs/variants. The sum of all variant quantities must equal the dieline's **MOQ**."
 )
 
 # Master Reference Table
@@ -411,169 +372,116 @@ with st.expander("📋 View Ren-Flex Digital Trial MOQ & Pricing Schedule (Quote
     ])
     st.dataframe(ref_df, use_container_width=True, hide_index=True)
 
-# Top Controls
-ctrl_col1, ctrl_col2 = st.columns([3, 1])
-with ctrl_col1:
-    st.selectbox(
-        "📄 Quick-Load Single Ren-Flex Trial Quote:",
-        options=["-- Select a Ren-Flex Trial Quote --"] + DIELINE_OPTIONS,
-        key="preset_die_selector",
-        on_change=load_single_quote_preset,
-    )
-with ctrl_col2:
-    st.write("")
-    st.write("")
+# Top Refresh Button
+_, top_btn_col = st.columns([4, 1])
+with top_btn_col:
     st.button("🔄 Refresh / Clear Form", on_click=reset_all_form_fields, use_container_width=True)
 
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 1. DIGITAL TRIAL DIELINE RUNS & VARIANT ALLOCATION
+# 1. SINGLE DIELINE SELECTION & VARIANT SPLIT
 # -----------------------------------------------------------------------------
-st.header("1. Digital Trial Dieline Runs & Variant Split")
+st.header("1. Dieline Selection & Variant Breakdown")
 
-num_dieline_runs = st.number_input(
-    "Number of Dieline Sizes to Trial",
-    min_value=1,
-    max_value=8,
-    step=1,
-    value=1,
-    key="num_dieline_runs",
-    help="Each dieline has its own MOQ and flat trial run price. Increase this only if trialling multiple jar sizes."
-)
+if "selected_dieline" not in st.session_state:
+    st.session_state["selected_dieline"] = DIELINE_OPTIONS[0]
+if "num_variants" not in st.session_state:
+    st.session_state["num_variants"] = 1
 
-dieline_runs_data = []
-all_runs_valid = True
-total_order_qty = 0
-total_variant_count = 0
-total_trial_runs_charge = 0.0
-selected_dieline_names = []
+top_c1, top_c2, top_c3, top_c4 = st.columns([3, 1.3, 1.3, 1.4])
+with top_c1:
+    chosen_die = st.selectbox(
+        "Select Dieline / Jar Size",
+        options=DIELINE_OPTIONS,
+        key="selected_dieline",
+        on_change=distribute_moq_evenly,
+    )
+    spec = DIELINE_SPECS[chosen_die]
+    st.caption(f"Quote Ref: **{spec['quote_ref']}** | Label Size: **{spec['size_mm']}**")
 
-for r in range(int(num_dieline_runs)):
-    if f"run_die_{r}" not in st.session_state:
-        st.session_state[f"run_die_{r}"] = DIELINE_OPTIONS[r % len(DIELINE_OPTIONS)]
-    if f"run_n_vars_{r}" not in st.session_state:
-        st.session_state[f"run_n_vars_{r}"] = 1
+with top_c2:
+    n_vars = st.number_input(
+        "No. of Variants in this Die",
+        min_value=1,
+        max_value=20,
+        step=1,
+        key="num_variants",
+        on_change=distribute_moq_evenly,
+    )
 
-    current_die = st.session_state[f"run_die_{r}"]
-    spec = DIELINE_SPECS[current_die]
-    required_moq = spec["moq"]
-    unit_price = spec["unit_price"]
-    run_charge = required_moq * unit_price
+required_moq = spec["moq"]
+unit_price = spec["unit_price"]
+run_charge = required_moq * unit_price
 
-    with st.container(border=True):
-        st.subheader(f"Dieline Trial Run #{r+1}")
+with top_c3:
+    st.metric("Required MOQ (Total Qty)", f"{required_moq:,}")
 
-        top_c1, top_c2, top_c3, top_c4 = st.columns([3, 1.3, 1.3, 1.4])
-        with top_c1:
-            chosen_die = st.selectbox(
-                "Select Dieline / Jar Size",
-                options=DIELINE_OPTIONS,
-                key=f"run_die_{r}",
-                on_change=on_dieline_or_variant_count_change,
-                args=(r,),
-            )
-            st.caption(f"Quote Ref: **{spec['quote_ref']}** | Size: **{spec['size_mm']}**")
+with top_c4:
+    st.metric(
+        "Digital Trial Run Charge",
+        f"R {run_charge:,.2f}",
+        delta=f"@ R {unit_price:.4f} / label",
+        delta_color="off"
+    )
 
-        with top_c2:
-            n_vars = st.number_input(
-                "No. of Variants in Die",
-                min_value=1,
-                max_value=20,
-                step=1,
-                key=f"run_n_vars_{r}",
-                on_change=on_dieline_or_variant_count_change,
-                args=(r,),
-            )
+st.subheader("Allocate MOQ Across Label Designs / Variants")
 
-        with top_c3:
-            st.metric("Required MOQ (Run Qty)", f"{required_moq:,}")
+# Initialize variant quantities if missing
+if "v_qty_0" not in st.session_state:
+    distribute_moq_evenly()
 
-        with top_c4:
-            st.metric(
-                "Single Run Charge",
-                f"R {run_charge:,.2f}",
-                delta=f"@ R {unit_price:.4f} / label",
-                delta_color="off"
-            )
+variant_details = []
+allocated_sum = 0
 
-        st.markdown("**Specify Label Designs & Quantities within this Die Size:**")
+for v in range(int(n_vars)):
+    if f"v_qty_{v}" not in st.session_state:
+        st.session_state[f"v_qty_{v}"] = 0
 
-        # Ensure variant quantities exist for this run
-        if f"run_{r}_v_qty_0" not in st.session_state:
-            distribute_moq_evenly(r)
+    vc1, vc2, vc3 = st.columns([3.5, 1.5, 1])
+    with vc1:
+        v_desc = st.text_input(
+            f"Variant {v+1} Description / Artwork Name",
+            key=f"v_name_{v}",
+            placeholder=f'e.g., "{spec["jar_name"]} - Design {v+1}"',
+        )
+    with vc2:
+        v_qty = st.number_input(
+            f"Variant {v+1} Qty",
+            min_value=0,
+            max_value=required_moq,
+            step=500,
+            key=f"v_qty_{v}",
+        )
+    with vc3:
+        pct_share = (v_qty / required_moq * 100) if required_moq > 0 else 0
+        st.write("**% of MOQ**")
+        st.write(f"{pct_share:.1f}%")
 
-        run_variants = []
-        allocated_sum = 0
-
-        for v in range(int(n_vars)):
-            if f"run_{r}_v_qty_{v}" not in st.session_state:
-                st.session_state[f"run_{r}_v_qty_{v}"] = 0
-
-            vc1, vc2, vc3 = st.columns([3.5, 1.5, 1])
-            with vc1:
-                v_desc = st.text_input(
-                    f"Design {v+1} Description / Artwork Name",
-                    key=f"run_{r}_v_name_{v}",
-                    placeholder=f'e.g., "{spec["jar_name"]} - Flavour / Variant {v+1}"',
-                )
-            with vc2:
-                v_qty = st.number_input(
-                    f"Design {v+1} Qty",
-                    min_value=0,
-                    max_value=required_moq,
-                    step=500,
-                    key=f"run_{r}_v_qty_{v}",
-                )
-            with vc3:
-                pct_share = (v_qty / required_moq * 100) if required_moq > 0 else 0
-                st.write("**Share**")
-                st.write(f"{pct_share:.1f}%")
-
-            allocated_sum += v_qty
-            run_variants.append({
-                "variant": v_desc,
-                "quantity": v_qty,
-            })
-
-        # MOQ Validation & Auto-Balance Bar
-        diff = required_moq - allocated_sum
-        val_c1, val_c2 = st.columns([3.5, 1.5])
-        with val_c1:
-            if diff == 0:
-                st.success(f"✅ **Allocated: {allocated_sum:,} / {required_moq:,} units** — Exact match to Dieline MOQ.")
-            elif diff > 0:
-                all_runs_valid = False
-                st.error(f"⚠️ **Allocated: {allocated_sum:,} / {required_moq:,} units** — Please allocate **{diff:,} more units** to reach the MOQ.")
-            else:
-                all_runs_valid = False
-                st.error(f"⚠️ **Allocated: {allocated_sum:,} / {required_moq:,} units** — Over MOQ by **{abs(diff):,} units**. Reduce variant quantities.")
-        with val_c2:
-            st.button(
-                "⚖️ Split MOQ Evenly",
-                key=f"balance_btn_{r}",
-                on_click=distribute_moq_evenly,
-                args=(r,),
-                use_container_width=True,
-            )
-
-    total_order_qty += required_moq
-    total_variant_count += int(n_vars)
-    total_trial_runs_charge += run_charge
-    if chosen_die not in selected_dieline_names:
-        selected_dieline_names.append(chosen_die)
-
-    dieline_runs_data.append({
-        "dieline": chosen_die,
-        "quote_ref": spec["quote_ref"],
-        "die_code": spec["die_code"],
-        "jar_name": spec["jar_name"],
-        "size_mm": spec["size_mm"],
-        "moq": required_moq,
-        "unit_price": unit_price,
-        "run_charge": run_charge,
-        "variants": run_variants,
+    allocated_sum += v_qty
+    variant_details.append({
+        "variant": v_desc,
+        "quantity": v_qty,
     })
+
+# MOQ Validation & Auto-Balance Bar
+diff = required_moq - allocated_sum
+is_moq_valid = (diff == 0)
+
+val_c1, val_c2 = st.columns([3.5, 1.5])
+with val_c1:
+    if diff == 0:
+        st.success(f"✅ **Allocated: {allocated_sum:,} / {required_moq:,} units** — Exact match to Dieline MOQ.")
+    elif diff > 0:
+        st.error(f"⚠️ **Allocated: {allocated_sum:,} / {required_moq:,} units** — Please allocate **{diff:,} more units** to reach the MOQ.")
+    else:
+        st.error(f"⚠️ **Allocated: {allocated_sum:,} / {required_moq:,} units** — Over MOQ by **{abs(diff):,} units**. Please reduce variant quantities.")
+with val_c2:
+    st.button(
+        "⚖️ Split MOQ Evenly",
+        on_click=distribute_moq_evenly,
+        use_container_width=True,
+    )
 
 st.divider()
 
@@ -609,23 +517,9 @@ with col_sub2:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 3. JAR COMPATIBILITY (SYNCED WITH TRIAL DIELINES)
+# 3. COLOUR MATCHING & PRINT METHOD
 # -----------------------------------------------------------------------------
-st.header("3. IML Labels Required for Jars")
-st.caption("Pre-selected from the dielines configured in Section 1:")
-
-selected_jars = st.multiselect(
-    "Target Jars & Dieline Dimensions",
-    options=DIELINE_OPTIONS,
-    default=selected_dieline_names,
-)
-
-st.divider()
-
-# -----------------------------------------------------------------------------
-# 4. COLOUR MATCHING & PRINT METHOD
-# -----------------------------------------------------------------------------
-st.header("4. Colour Matching & Print Method")
+st.header("3. Colour Matching & Print Method")
 
 col_c1, col_c2 = st.columns(2)
 with col_c1:
@@ -681,10 +575,10 @@ with col_c2:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 5. FINANCIAL QUOTATION SUMMARY
+# 4. FINANCIAL QUOTATION SUMMARY
 # -----------------------------------------------------------------------------
-st.header("5. Financial Quotation Summary")
-st.caption("Each Dieline Trial Run is charged as a single MOQ run. Add optional pre-press/proofing charges below:")
+st.header("4. Financial Quotation Summary")
+st.caption("The Digital Trial Run is charged as one MOQ run for the selected dieline. Add optional pre-press charges below:")
 
 col_desc, col_val, col_qty, col_sub = st.columns([3.5, 2, 1.5, 2])
 col_desc.write("**Task Description**")
@@ -692,13 +586,12 @@ col_val.write("**Unit Price**")
 col_qty.write("**MOQ Qty**")
 col_sub.write("**Sub Total**")
 
-# Auto-populated Digital Trial Runs (1 line per dieline run)
-for run in dieline_runs_data:
-    r_desc, r_val, r_qty, r_sub = st.columns([3.5, 2, 1.5, 2])
-    r_desc.write(f"Digital Trial Run: **{run['die_code']} — {run['jar_name']}** ({len(run['variants'])} variant(s))")
-    r_val.write(f"R {run['unit_price']:.4f}")
-    r_qty.write(f"{run['moq']:,}")
-    r_sub.markdown(f"**R {run['run_charge']:,.2f}**")
+# Auto-populated Digital Trial Run (Single Charge)
+r_desc, r_val, r_qty, r_sub = st.columns([3.5, 2, 1.5, 2])
+r_desc.write(f"Digital Trial Run: **{spec['die_code']} — {spec['jar_name']}** ({int(n_vars)} variant(s))")
+r_val.write(f"R {unit_price:.4f}")
+r_qty.write(f"{required_moq:,}")
+r_sub.markdown(f"**R {run_charge:,.2f}**")
 
 # Optional Extra Charges
 c_desc, c_val, c_qty, c_sub = st.columns([3.5, 2, 1.5, 2])
@@ -725,7 +618,7 @@ p_sub.markdown(f"**R {pt_subtotal:,.2f}**")
 st.divider()
 
 # Live Totals Calculation
-net_subtotal = total_trial_runs_charge + cm_subtotal + lf_subtotal + pt_subtotal
+net_subtotal = run_charge + cm_subtotal + lf_subtotal + pt_subtotal
 vat_amount = net_subtotal * 0.15
 gross_total = net_subtotal + vat_amount
 
@@ -737,29 +630,35 @@ with tot_col2:
 
 st.divider()
 
-# SUBMIT BUTTON (Disabled if any dieline run's variants do not sum to its MOQ)
+# SUBMIT BUTTON (Disabled until variant quantities equal the MOQ)
 submit_button = st.button(
     "Submit Digital Trial Quotation & Generate PDF",
     type="primary",
     use_container_width=True,
-    disabled=not all_runs_valid,
+    disabled=not is_moq_valid,
 )
 
-if not all_runs_valid:
-    st.warning("⚠️ Please ensure the variant quantities in each Dieline Trial Run equal the required MOQ before submitting.")
+if not is_moq_valid:
+    st.warning("⚠️ Please ensure the sum of variant quantities equals the Dieline MOQ before submitting.")
 
 # -----------------------------------------------------------------------------
 # POST-SUBMISSION ACTIONS
 # -----------------------------------------------------------------------------
-if submit_button and all_runs_valid:
+if submit_button and is_moq_valid:
     quote_data = {
-        "Total Quantity": total_order_qty,
-        "Total Variants": total_variant_count,
-        "Dieline Runs": dieline_runs_data,
+        "Selected Dieline": chosen_die,
+        "Quote Ref": spec["quote_ref"],
+        "Die Code": spec["die_code"],
+        "Jar Name": spec["jar_name"],
+        "Dieline Size": spec["size_mm"],
+        "Total Quantity": required_moq,
+        "No of Variants": int(n_vars),
+        "Variant Details": variant_details,
+        "Unit Price": unit_price,
+        "Trial Run Charge": run_charge,
         "Substrate Colour": substrate_colour,
         "Substrate Type": substrate_type,
         "Material Specs": material_specs,
-        "Target Jars": selected_jars,
         "Colour Matching": colour_match_type,
         "Pantone Qty": qty_pantone_match,
         "Pantone Refs": pantone_refs,
