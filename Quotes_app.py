@@ -20,10 +20,11 @@ except ImportError:
 
 
 # -----------------------------------------------------------------------------
-# DIGITAL TRIAL DIELINE MASTER DATA (EXTRACTED FROM REN-FLEX PDF QUOTES)
+# DIGITAL TRIAL DIELINE MASTER DATA & PRICING CONSTANTS
 # -----------------------------------------------------------------------------
 
 CLEAR_MARKUP_MULTIPLIER = 1.05  # +5% markup for Clear substrate
+EPSON_PROOF_UNIT_COST = 650.00  # R 650.00 per Epson proof
 
 DIELINE_SPECS = {
     "Die 173 - 250ml Jar (274.395mm x 44.121mm)": {
@@ -284,7 +285,7 @@ def generate_pdf_quote(data: dict) -> bytes:
     
     key_value("Litho Print Required:", data["Litho Print"])
     key_value("Digital Print Required:", data["Digital Print"])
-    key_value("Epson Proofs Required:", f"{data['Epson Proof Qty']} proof(s)")
+    key_value("Epson Proofs Required:", f"{data['Epson Proof Qty']} proof(s) @ R {EPSON_PROOF_UNIT_COST:,.2f} each")
     key_value("Layflat Supplied:", data["Layflat Supplied"])
     pdf.ln(4)
 
@@ -296,7 +297,7 @@ def generate_pdf_quote(data: dict) -> bytes:
     pdf.set_fill_color(226, 232, 240)
     pdf.cell(95, 6, "Task Description", border=1, fill=True)
     pdf.cell(35, 6, "Unit Price", border=1, align="R", fill=True)
-    pdf.cell(25, 6, "MOQ Qty", border=1, align="R", fill=True)
+    pdf.cell(25, 6, "Qty", border=1, align="R", fill=True)
     pdf.cell(35, 6, "Sub Total", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
     pdf.set_x(pdf.l_margin)
@@ -307,6 +308,15 @@ def generate_pdf_quote(data: dict) -> bytes:
     pdf.cell(35, 6, f"R {data['Unit Price']:.4f}", border=1, align="R")
     pdf.cell(25, 6, f"{data['Total Quantity']:,}", border=1, align="R")
     pdf.cell(35, 6, f"R {data['Trial Run Charge']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+
+    # Epson Proofs Line Item
+    pdf.set_x(pdf.l_margin)
+    epson_qty = data.get("Epson Proof Qty", 0)
+    epson_subtotal = epson_qty * EPSON_PROOF_UNIT_COST
+    pdf.cell(95, 6, "Epson Proofs", border=1)
+    pdf.cell(35, 6, f"R {EPSON_PROOF_UNIT_COST:,.2f}", border=1, align="R")
+    pdf.cell(25, 6, str(epson_qty), border=1, align="R")
+    pdf.cell(35, 6, f"R {epson_subtotal:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
 
     extra_items = [
         ("Colour Matching", data.get("cm_net_val", 0.0), data.get("cm_quantity", 0)),
@@ -618,7 +628,11 @@ with col_c2:
     )
 
     epson_proof_qty = st.number_input(
-        "Epson Proof (Qty)", min_value=0, step=1, value=1, key="epson_proof_qty"
+        f"Epson Proof (Qty @ R {EPSON_PROOF_UNIT_COST:,.2f} each)",
+        min_value=0,
+        step=1,
+        value=1,
+        key="epson_proof_qty"
     )
     layflat_supplied = st.radio(
         "Layflat for layout and colour to be supplied?",
@@ -633,12 +647,12 @@ st.divider()
 # 4. FINANCIAL QUOTATION SUMMARY
 # -----------------------------------------------------------------------------
 st.header("4. Financial Quotation Summary")
-st.caption("The Digital Trial Run is charged as one MOQ run for the selected dieline. Add optional pre-press charges below:")
+st.caption("Digital Trial Run and Epson Proofs calculate automatically. Add optional pre-press charges below:")
 
 col_desc, col_val, col_qty, col_sub = st.columns([3.5, 2, 1.5, 2])
 col_desc.write("**Task Description**")
 col_val.write("**Unit Price**")
-col_qty.write("**MOQ Qty**")
+col_qty.write("**Qty**")
 col_sub.write("**Sub Total**")
 
 # Auto-populated Digital Trial Run (Single Charge)
@@ -648,6 +662,14 @@ r_desc.write(f"Digital Trial Run: **{spec['die_code']} — {spec['jar_name']}** 
 r_val.write(f"R {unit_price:.4f}")
 r_qty.write(f"{required_moq:,}")
 r_sub.markdown(f"**R {run_charge:,.2f}**")
+
+# Auto-populated Epson Proofs (R 650.00 per proof)
+ep_desc, ep_val, ep_qty, ep_sub = st.columns([3.5, 2, 1.5, 2])
+ep_desc.write("Epson Proofs")
+ep_val.write(f"R {EPSON_PROOF_UNIT_COST:,.2f}")
+ep_qty.write(f"{int(epson_proof_qty)}")
+epson_subtotal = int(epson_proof_qty) * EPSON_PROOF_UNIT_COST
+ep_sub.markdown(f"**R {epson_subtotal:,.2f}**")
 
 # Optional Extra Charges
 c_desc, c_val, c_qty, c_sub = st.columns([3.5, 2, 1.5, 2])
@@ -674,7 +696,7 @@ p_sub.markdown(f"**R {pt_subtotal:,.2f}**")
 st.divider()
 
 # Live Totals Calculation
-net_subtotal = run_charge + cm_subtotal + lf_subtotal + pt_subtotal
+net_subtotal = run_charge + epson_subtotal + cm_subtotal + lf_subtotal + pt_subtotal
 vat_amount = net_subtotal * 0.15
 gross_total = net_subtotal + vat_amount
 
@@ -723,7 +745,8 @@ if submit_button and is_moq_valid:
         "Target Refs": target_refs,
         "Litho Print": litho_print,
         "Digital Print": digital_print,
-        "Epson Proof Qty": epson_proof_qty,
+        "Epson Proof Qty": int(epson_proof_qty),
+        "Epson Proof Subtotal": epson_subtotal,
         "Layflat Supplied": layflat_supplied,
         "cm_net_val": cm_net_val,
         "cm_quantity": cm_quantity,
