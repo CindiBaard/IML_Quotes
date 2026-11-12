@@ -20,6 +20,67 @@ except ImportError:
 
 
 # -----------------------------------------------------------------------------
+# EXTRACTED PDF QUOTE CATALOG (REN-FLEX PACKAGING)
+# -----------------------------------------------------------------------------
+
+QUOTE_CATALOG = {
+    "Quote 10794/01 — Die 173: 250ml Jar (274.395mm x 44.121mm)": {
+        "jar_label": "Die 173 - 250ml Jar (274.395mm x 44.121mm)",
+        "qty": 25000,
+        "unit_price": 0.5162,
+        "variant_name": "Die 173 - 250ml Jar (274.395mm x 44.121mm)",
+    },
+    "Quote 10795/01 — Die 174: 350ml Jar (274.392mm x 60.183mm)": {
+        "jar_label": "Die 174 - 350ml Jar (274.392mm x 60.183mm)",
+        "qty": 18000,
+        "unit_price": 0.7082,
+        "variant_name": "Die 174 - 350ml Jar (274.392mm x 60.183mm)",
+    },
+    "Quote 10796/01 — Die 175: 450ml Jar (274.387mm x 82.041mm)": {
+        "jar_label": "Die 175 - 450ml Jar (274.387mm x 82.041mm)",
+        "qty": 13500,
+        "unit_price": 0.9650,
+        "variant_name": "Die 175 - 450ml Jar (274.387mm x 82.041mm)",
+    },
+    "Quote 10797/01 — Die 176: 500ml Jar (291.273mm x 84.605mm)": {
+        "jar_label": "Die 176 - 500ml Jar (291.273mm x 84.605mm)",
+        "qty": 13500,
+        "unit_price": 0.9650,
+        "variant_name": "Die 176 - 500ml Jar (291.273mm x 84.605mm)",
+    },
+    "Quote 10798/01 — Die 189: 450ml Std Lightweight Jar (275.378mm x 87.066mm)": {
+        "jar_label": "Die 189 - 450ml Std Lightweight Jar (275.378mm x 87.066mm)",
+        "qty": 13500,
+        "unit_price": 0.9650,
+        "variant_name": "Die 189 - 450ml Std Lightweight Jar (275.378mm x 87.066mm)",
+    },
+    "Quote 10799/01 — Die 211: 500ml Eve Clicks Tub (292.304mm x 81.936mm)": {
+        "jar_label": "Die 211 - 500ml Eve Clicks Tub (292.304mm x 81.936mm)",
+        "qty": 13500,
+        "unit_price": 0.9650,
+        "variant_name": "Die 211 - 500ml Eve Clicks Tub (292.304mm x 81.936mm)",
+    },
+    "Quote 10800/01 — Die 216: Clicks Labels (292.304mm x 81.936mm)": {
+        "jar_label": "Die 216 - Clicks Labels (292.304mm x 81.936mm)",
+        "qty": 13500,
+        "unit_price": 0.9650,
+        "variant_name": "Die 216 - Clicks Labels (292.304mm x 81.936mm)",
+    },
+    "Quote 10801/01 — Die 264: 250ml Fabupharm (269.908mm x 44.967mm)": {
+        "jar_label": "Die 264 - 250ml Fabupharm (269.908mm x 44.967mm)",
+        "qty": 25000,
+        "unit_price": 0.5162,
+        "variant_name": "Die 264 - 250ml Fabupharm (269.908mm x 44.967mm)",
+    },
+}
+
+DEFAULT_MATERIAL_SPECS = (
+    "IML White Gloss, 60mic | Printed CMYK front only | "
+    "Finishing: Waterbased Varnish, Die Cutting - Digital | Other Material: Primer"
+)
+
+
+# -----------------------------------------------------------------------------
 # HELPER FUNCTIONS: GOOGLE SHEETS & PDF GENERATION
 # -----------------------------------------------------------------------------
 
@@ -49,7 +110,7 @@ def append_to_google_sheets(data: dict):
             "Colour Matching", "Pantone Qty", "Pantone Refs", "Target Qty",
             "Target Refs", "Litho Print", "Digital Print", "Epson Proof Qty",
             "Layflat Supplied", "Trials Required", "Trial Variants", "Trial Qty Per Variant",
-            "Net Subtotal", "15% VAT", "Gross Total"
+            "Base Printing Subtotal", "Net Subtotal", "15% VAT", "Gross Total"
         ]
         
         existing_row1 = sheet.row_values(1)
@@ -60,7 +121,7 @@ def append_to_google_sheets(data: dict):
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             data["Total Quantity"],
             data["No of Variants"],
-            str([f"{v['variant']}: {v['quantity']}" for v in data["Variant Details"]]),
+            str([f"{v['variant']}: {v['quantity']} @ R{v['unit_price']:.4f}" for v in data["Variant Details"]]),
             data["Substrate Colour"],
             data["Substrate Type"],
             data["Material Specs"],
@@ -77,6 +138,7 @@ def append_to_google_sheets(data: dict):
             data["Trials Required"],
             data["Trial Variants"],
             data["Trial Qty Per Variant"],
+            data["Base Printing Subtotal"],
             data["Net Subtotal"],
             data["VAT (15%)"],
             data["Gross Total"]
@@ -137,17 +199,22 @@ def generate_pdf_quote(data: dict) -> bytes:
     key_value("Number of Variants:", data["No of Variants"])
     pdf.ln(2)
 
-    # Variant Table
+    # Variant Table (with Unit Price & Line Subtotal)
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(226, 232, 240)
-    pdf.cell(120, 6, "Variant Name / Description", border=1, fill=True)
-    pdf.cell(60, 6, "Quantity", border=1, new_x="LMARGIN", new_y="NEXT", fill=True)
+    pdf.cell(90, 6, "Variant Name / Description", border=1, fill=True)
+    pdf.cell(30, 6, "Quantity", border=1, align="R", fill=True)
+    pdf.cell(30, 6, "Unit Price", border=1, align="R", fill=True)
+    pdf.cell(30, 6, "Line Total", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
     
     pdf.set_font("Helvetica", "", 8)
     for v in data["Variant Details"]:
         v_name = v["variant"] if v["variant"] else "Unnamed Variant"
-        pdf.cell(120, 6, v_name, border=1)
-        pdf.cell(60, 6, f"{v['quantity']:,}", border=1, new_x="LMARGIN", new_y="NEXT")
+        line_total = v["quantity"] * v["unit_price"]
+        pdf.cell(90, 6, v_name, border=1)
+        pdf.cell(30, 6, f"{v['quantity']:,}", border=1, align="R")
+        pdf.cell(30, 6, f"R {v['unit_price']:,.4f}", border=1, align="R")
+        pdf.cell(30, 6, f"R {line_total:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
     pdf.ln(4)
 
     # 2. Substrate
@@ -203,6 +270,18 @@ def generate_pdf_quote(data: dict) -> bytes:
     pdf.cell(35, 6, "Sub Total", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
     pdf.set_font("Helvetica", "", 8)
+    
+    # Row 1: Base Label Printing
+    avg_unit_price = (
+        data["Base Printing Subtotal"] / data["Calculated Label Qty"]
+        if data["Calculated Label Qty"] > 0 else 0.0
+    )
+    pdf.cell(80, 6, "Base Label Printing", border=1)
+    pdf.cell(35, 6, f"R {avg_unit_price:,.4f} (avg)", border=1, align="R")
+    pdf.cell(30, 6, f"{data['Calculated Label Qty']:,}", border=1, align="R")
+    pdf.cell(35, 6, f"R {data['Base Printing Subtotal']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R")
+
+    # Setup & Extra Charges
     financial_items = [
         ("Colour Matching", data.get("cm_net_val", 0.0), data.get("cm_quantity", 0)),
         ("Layflat", data.get("lf_net_val", 0.0), data.get("lf_quantity", 0)),
@@ -228,12 +307,11 @@ def generate_pdf_quote(data: dict) -> bytes:
     pdf.cell(145, 7, "Gross Total:", border=0, align="R")
     pdf.cell(35, 7, f"R {data['Gross Total']:,.2f}", border=1, new_x="LMARGIN", new_y="NEXT", align="R", fill=True)
 
-    # Expressly cast bytearray output to standard bytes for Streamlit download_button
     return bytes(pdf.output())
 
 
 # -----------------------------------------------------------------------------
-# FORM RESET CALLBACK FUNCTION
+# FORM RESET & PRESET LOADER CALLBACKS
 # -----------------------------------------------------------------------------
 
 def reset_all_form_fields():
@@ -247,14 +325,38 @@ def reset_all_form_fields():
         "lf_net", "lf_qty", "pt_net", "pt_qty"
     ]
     
-    # Catch dynamic variant input keys
     for key in list(st.session_state.keys()):
-        if key.startswith("v_name_") or key.startswith("v_qty_"):
+        if key.startswith("v_name_") or key.startswith("v_qty_") or key.startswith("v_price_"):
             known_keys.append(key)
             
     for key in known_keys:
         if key in st.session_state:
             del st.session_state[key]
+
+
+def load_pdf_quote_preset():
+    """Populates the form fields and unit prices based on the selected PDF quote preset."""
+    selection = st.session_state.get("pdf_preset_selector")
+    if not selection or selection == "-- Manual Entry --":
+        return
+
+    reset_all_form_fields()
+
+    if selection == "Load All 8 PDF Quotes (Full Range)":
+        items = list(QUOTE_CATALOG.values())
+    else:
+        items = [QUOTE_CATALOG[selection]]
+
+    st.session_state["total_qty"] = sum(item["qty"] for item in items)
+    st.session_state["num_variants"] = len(items)
+    st.session_state["substrate_colour"] = "White"
+    st.session_state["material_specs"] = DEFAULT_MATERIAL_SPECS
+    st.session_state["selected_jars"] = [item["jar_label"] for item in items]
+
+    for idx, item in enumerate(items):
+        st.session_state[f"v_name_{idx}"] = item["variant_name"]
+        st.session_state[f"v_qty_{idx}"] = item["qty"]
+        st.session_state[f"v_price_{idx}"] = item["unit_price"]
 
 
 # -----------------------------------------------------------------------------
@@ -267,11 +369,23 @@ st.set_page_config(
 
 st.title("🏷️ In-Mould Label (IML) Quotation Request")
 st.markdown(
-    "Please fill out the details below to generate an accurate quotation for your IML label range."
+    "Please fill out the details below or load values directly from your attached Ren-Flex PDF quotes."
 )
 
-# Refresh Button with on_click Callback
-st.button("🔄 Refresh / Clear Form", on_click=reset_all_form_fields, use_container_width=True)
+# Preset Loader & Refresh Controls
+ctrl_col1, ctrl_col2 = st.columns([3, 1])
+with ctrl_col1:
+    preset_options = ["-- Manual Entry --", "Load All 8 PDF Quotes (Full Range)"] + list(QUOTE_CATALOG.keys())
+    st.selectbox(
+        "📄 Pre-fill from Attached PDF Quote:",
+        options=preset_options,
+        key="pdf_preset_selector",
+        on_change=load_pdf_quote_preset
+    )
+with ctrl_col2:
+    st.write("")
+    st.write("")
+    st.button("🔄 Refresh / Clear Form", on_click=reset_all_form_fields, use_container_width=True)
 
 with st.form("iml_quote_form"):
 
@@ -281,30 +395,54 @@ with st.form("iml_quote_form"):
     col1, col2 = st.columns(2)
     with col1:
         total_qty = st.number_input(
-            "Total Qty of IML Labels in Range", min_value=1, step=100, value=10000, key="total_qty"
+            "Total Qty of IML Labels in Range", min_value=1, step=100, value=25000, key="total_qty"
         )
     with col2:
         num_variants = st.number_input(
             "No. of IML Label Variants in Range", min_value=1, step=1, value=1, key="num_variants"
         )
 
-    st.subheader("Variant Quantities & Descriptions")
-    st.info("Specify the details and quantities for each individual variant in the range.")
+    st.subheader("Variant Quantities, Unit Prices & Descriptions")
+    st.info("Specify the details, quantities, and unit prices for each individual variant in the range.")
 
     variant_details = []
+    base_printing_subtotal = 0.0
+    calculated_label_qty = 0
+
     for i in range(int(num_variants)):
-        v_col1, v_col2 = st.columns([2, 1])
+        v_col1, v_col2, v_col3, v_col4 = st.columns([3, 1.5, 1.5, 1.5])
         with v_col1:
             v_name = st.text_input(
                 f"Variant {i+1} Name / Description",
                 key=f"v_name_{i}",
-                placeholder='e.g., "Vanilla 250g"',
+                placeholder='e.g., "Die 173 - 250ml Jar (274.395mm x 44.121mm)"',
             )
         with v_col2:
             v_qty = st.number_input(
-                f"Variant {i+1} Qty", min_value=1, step=500, key=f"v_qty_{i}"
+                f"Variant {i+1} Qty", min_value=1, step=500, value=25000, key=f"v_qty_{i}"
             )
-        variant_details.append({"variant": v_name, "quantity": v_qty})
+        with v_col3:
+            v_price = st.number_input(
+                f"Variant {i+1} Unit Price (R)",
+                min_value=0.0,
+                step=0.01,
+                value=0.5162,
+                format="%.4f",
+                key=f"v_price_{i}",
+            )
+        with v_col4:
+            v_line_total = v_qty * v_price
+            st.write(f"**Variant {i+1} Subtotal**")
+            st.markdown(f"R {v_line_total:,.2f}")
+
+        base_printing_subtotal += v_line_total
+        calculated_label_qty += v_qty
+        variant_details.append({
+            "variant": v_name,
+            "quantity": v_qty,
+            "unit_price": v_price,
+            "subtotal": v_line_total,
+        })
 
     st.divider()
 
@@ -329,6 +467,7 @@ with st.form("iml_quote_form"):
     with col_sub2:
         material_specs = st.text_area(
             "Material Specifications",
+            value=DEFAULT_MATERIAL_SPECS,
             placeholder="Specify film thickness, barrier properties, or specific resin grade requirements...",
             height=120,
             key="material_specs"
@@ -338,22 +477,21 @@ with st.form("iml_quote_form"):
 
     # 3. JAR COMPATIBILITY
     st.header("3. IML Labels Required for Jars")
-    st.caption("Select all jar formats required for this quotation:")
+    st.caption("Select all jar formats and label dimensions required for this quotation:")
 
     jar_options = [
-        "150mm non-tamper lock jar",
-        "250mm non-tamper lock jar",
-        "350mm non-tamper lock jar",
-        "450mm non-tamper lock jar",
-        "450mm standard lightweight jar",
-        "250mm Eve jar",
-        "350mm Eve jar",
-        "500mm jar with standard length label",
-        "500mm jar with standard length label plus 1mm longer label (Clicks / custom specification)",
+        "Die 173 - 250ml Jar (274.395mm x 44.121mm)",
+        "Die 174 - 350ml Jar (274.392mm x 60.183mm)",
+        "Die 175 - 450ml Jar (274.387mm x 82.041mm)",
+        "Die 176 - 500ml Jar (291.273mm x 84.605mm)",
+        "Die 189 - 450ml Std Lightweight Jar (275.378mm x 87.066mm)",
+        "Die 211 - 500ml Eve Clicks Tub (292.304mm x 81.936mm)",
+        "Die 216 - Clicks Labels (292.304mm x 81.936mm)",
+        "Die 264 - 250ml Fabupharm (269.908mm x 44.967mm)",
     ]
 
     selected_jars = st.multiselect(
-        "Select Target Jars (Specify)", options=jar_options, key="selected_jars"
+        "Select Target Jars & Label Dimensions (Specify)", options=jar_options, key="selected_jars"
     )
 
     st.divider()
@@ -443,13 +581,21 @@ with st.form("iml_quote_form"):
 
     # 6. FINANCIAL COST SUMMARY
     st.header("6. Financial Quotation Summary")
-    st.caption("Specify net values and quantities for task items:")
+    st.caption("Base Label Printing is calculated automatically from Section 1. Add setup or extra charges below:")
 
     col_desc, col_val, col_qty, col_sub = st.columns([3, 2, 2, 2])
     col_desc.write("**Task Description**")
     col_val.write("**Net Value per Unit**")
     col_qty.write("**Quantity**")
     col_sub.write("**Sub Total**")
+
+    # Item 0: Base Label Printing (Auto-calculated from Variant Breakdown)
+    b_desc, b_val, b_qty, b_sub = st.columns([3, 2, 2, 2])
+    b_desc.write("Base Label Printing")
+    avg_rate = base_printing_subtotal / calculated_label_qty if calculated_label_qty > 0 else 0.0
+    b_val.write(f"R {avg_rate:,.4f} (avg)")
+    b_qty.write(f"{calculated_label_qty:,}")
+    b_sub.markdown(f"**R {base_printing_subtotal:,.2f}**")
 
     # Item 1: Colour Matching
     c_desc, c_val, c_qty, c_sub = st.columns([3, 2, 2, 2])
@@ -478,7 +624,7 @@ with st.form("iml_quote_form"):
     st.divider()
 
     # Totals Calculation
-    net_subtotal = cm_subtotal + lf_subtotal + pt_subtotal
+    net_subtotal = base_printing_subtotal + cm_subtotal + lf_subtotal + pt_subtotal
     vat_amount = net_subtotal * 0.15
     gross_total = net_subtotal + vat_amount
 
@@ -501,6 +647,7 @@ with st.form("iml_quote_form"):
 if submit_button:
     quote_data = {
         "Total Quantity": total_qty,
+        "Calculated Label Qty": calculated_label_qty,
         "No of Variants": num_variants,
         "Variant Details": variant_details,
         "Substrate Colour": substrate_colour,
@@ -521,6 +668,7 @@ if submit_button:
         "Trial Qty Per Variant": (
             trial_qty_per_variant if trials_required == "Yes" else 0
         ),
+        "Base Printing Subtotal": base_printing_subtotal,
         "cm_net_val": cm_net_val,
         "cm_quantity": cm_quantity,
         "lf_net_val": lf_net_val,
